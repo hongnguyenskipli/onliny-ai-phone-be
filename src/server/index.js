@@ -1,0 +1,49 @@
+import cors from "cors";
+import express from "express";
+import bodyParser from "body-parser";
+import cookieParser from "cookie-parser";
+import dotenv from "dotenv";
+import aws from "aws-sdk";
+import nodemailer from "nodemailer";
+
+import { ALLOWED_ORIGINS, AWS_CONFIG_ROOT } from "../constants/index.js";
+import AuthRouter from "../router/auth.js";
+import BusinessRouter from "../router/business.js";
+import { defaultDB } from "./db.js";
+
+dotenv.config();
+
+export const emailTransporter = nodemailer.createTransport({
+  SES: new aws.SES({ ...AWS_CONFIG_ROOT, apiVersion: "2010-12-01" }),
+});
+
+const app = express();
+
+app.disable("x-powered-by");
+
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
+app.use(cookieParser());
+
+app.get("/health", (req, res) => {
+  if (!defaultDB) return res.status(503).json({ status: "error", message: "Cannot connect to the database" });
+  res.status(200).json({ status: "ok" });
+});
+
+app.use("/api/auth", AuthRouter);
+app.use("/api/business", BusinessRouter);
+
+app.use((req, res) => {
+  res.status(404).json({ status: 404, message: "Not Found" });
+});
+
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(err.status || 500).json({
+    status: err.status || 500,
+    message: err.message,
+  });
+});
+
+export default app;
