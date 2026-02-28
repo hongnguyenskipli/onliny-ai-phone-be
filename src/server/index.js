@@ -9,6 +9,7 @@ import nodemailer from "nodemailer";
 import { ALLOWED_ORIGINS, AWS_CONFIG_ROOT } from "../constants/index.js";
 import AuthRouter from "../router/auth.js";
 import BusinessRouter from "../router/business.js";
+import ProfileRouter from "../router/profile.js";
 import { defaultDB } from "./db.js";
 
 dotenv.config();
@@ -33,6 +34,7 @@ app.get("/health", (req, res) => {
 
 app.use("/api/auth", AuthRouter);
 app.use("/api/business", BusinessRouter);
+app.use("/api/profile", ProfileRouter);
 
 app.use((req, res) => {
   res.status(404).json({ status: 404, message: "Not Found" });

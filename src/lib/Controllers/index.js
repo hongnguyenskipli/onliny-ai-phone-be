@@ -1,4 +1,5 @@
 import AuthControllers from "./Auth/index.js";
 import BusinessControllers from "./Business/index.js";
+import ProfileControllers from "./Profile/index.js";
 
-export default { AuthControllers, BusinessControllers };
+export default { AuthControllers, BusinessControllers, ProfileControllers };
