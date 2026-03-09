@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto";
 import { FieldValue } from "firebase-admin/firestore";
 import { defaultDB } from "../../../server/db.js";
 import { emailTransporter } from "../../../server/index.js";
@@ -54,12 +55,29 @@ export const verifyOtpService = async ({ email, otp, db = defaultDB }) => {
   await db.collection(OTP_COLLECTION).doc(email).delete();
 
   let userDoc = await db.collection(USERS_COLLECTION).doc(email).get();
+  let uuid;
+
   if (!userDoc.exists) {
+    uuid = randomUUID();
     await db.collection(USERS_COLLECTION).doc(email).set({
+      uuid,
       email,
+      name: "",
       createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
     });
+  } else {
+    const data = userDoc.data();
+    if (!data.uuid) {
+      uuid = randomUUID();
+      await db.collection(USERS_COLLECTION).doc(email).set(
+        { uuid, updatedAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    } else {
+      uuid = data.uuid;
+    }
   }
 
-  return { success: true, email };
+  return { success: true, uuid, email };
 };

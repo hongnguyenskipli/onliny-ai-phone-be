@@ -36,7 +36,7 @@ const verifyOtp = async ({ req, res, db = defaultDB }) => {
     }
 
     const token = jwt.sign(
-      { email: result.email },
+      { uuid: result.uuid, email: result.email },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }
     );

@@ -25,34 +25,23 @@ const mapCall = (call) => ({
   hasRecording: false,
 });
 
-const getUserPhoneNumber = async (identity) => {
-  const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(identity).get();
-  if (doc.exists) {
-    return doc.data().phone_number;
-  }
-
-  const snapshot = await defaultDB
-    .collection(VOICE_BINDINGS_COLLECTION)
-    .where("identity", "==", identity)
-    .limit(1)
-    .get();
-
-  if (!snapshot.empty) {
-    const binding = snapshot.docs[0].data();
-    const numberData = {
-      phone_number: binding.phoneNumber,
-      friendly_name: binding.phoneNumber,
-      sid: null,
-      region: "",
-      locality: "",
-      purchasedAt: binding.updatedAt || new Date().toISOString(),
-      userEmail: identity,
-    };
-    await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(identity).set(numberData);
-    return binding.phoneNumber;
-  }
-
+const getUserPhoneNumber = async (uuid) => {
+  if (!uuid) return null;
+  const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).get();
+  if (doc.exists) return doc.data().phone_number;
   return null;
+};
+
+const getCallerIdByEmail = async (email) => {
+  try {
+    const snapshot = await defaultDB
+      .collection(USER_NUMBERS_COLLECTION)
+      .where("userEmail", "==", email)
+      .limit(1)
+      .get();
+    if (!snapshot.empty) return snapshot.docs[0].data().phone_number;
+  } catch (_) {}
+  return process.env.TWILIO_PHONE_NUMBER;
 };
 
 const VoiceRouter = Router();
@@ -83,7 +72,6 @@ VoiceRouter.get("/token", verifyToken, (req, res) => {
   }
 
   const voiceGrant = new twilio.jwt.AccessToken.VoiceGrant(voiceGrantOptions);
-
   token.addGrant(voiceGrant);
 
   return res.json({ token: token.toJwt(), identity });
@@ -91,7 +79,7 @@ VoiceRouter.get("/token", verifyToken, (req, res) => {
 
 VoiceRouter.post("/bind", verifyToken, async (req, res) => {
   const { phoneNumber } = req.body;
-  const identity = req.user.email;
+  const { email, uuid } = req.user;
 
   if (!phoneNumber) {
     return res.status(400).json({ message: "phoneNumber is required." });
@@ -101,7 +89,7 @@ VoiceRouter.post("/bind", verifyToken, async (req, res) => {
     await defaultDB
       .collection(VOICE_BINDINGS_COLLECTION)
       .doc(phoneNumber)
-      .set({ phoneNumber, identity, updatedAt: new Date().toISOString() });
+      .set({ phoneNumber, identity: email, uuid, updatedAt: new Date().toISOString() });
 
     return res.json({ success: true });
   } catch (err) {
@@ -152,10 +140,7 @@ VoiceRouter.post("/outgoing", async (req, res) => {
 
   let callerId = process.env.TWILIO_PHONE_NUMBER;
   if (identity) {
-    try {
-      const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(identity).get();
-      if (doc.exists) callerId = doc.data().phone_number;
-    } catch (_) {}
+    callerId = await getCallerIdByEmail(identity);
   }
 
   if (to) {
@@ -199,34 +184,12 @@ VoiceRouter.get("/available-numbers", verifyToken, async (req, res) => {
 });
 
 VoiceRouter.get("/my-number", verifyToken, async (req, res) => {
-  const identity = req.user.email;
+  const { uuid } = req.user;
   try {
-    const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(identity).get();
+    const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).get();
     if (doc.exists) {
       return res.json({ success: true, data: doc.data() });
     }
-
-    const snapshot = await defaultDB
-      .collection(VOICE_BINDINGS_COLLECTION)
-      .where("identity", "==", identity)
-      .limit(1)
-      .get();
-
-    if (!snapshot.empty) {
-      const binding = snapshot.docs[0].data();
-      const numberData = {
-        phone_number: binding.phoneNumber,
-        friendly_name: binding.phoneNumber,
-        sid: null,
-        region: "",
-        locality: "",
-        purchasedAt: binding.updatedAt || new Date().toISOString(),
-        userEmail: identity,
-      };
-      await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(identity).set(numberData);
-      return res.json({ success: true, data: numberData });
-    }
-
     return res.json({ success: true, data: null });
   } catch (err) {
     return res.status(500).json({ message: "Failed to fetch phone number." });
@@ -236,7 +199,7 @@ VoiceRouter.get("/my-number", verifyToken, async (req, res) => {
 VoiceRouter.post("/purchase-number", verifyToken, async (req, res) => {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_APP_SID } = process.env;
   const { phoneNumber } = req.body;
-  const identity = req.user.email;
+  const { uuid, email } = req.user;
 
   if (!phoneNumber) {
     return res.status(400).json({ message: "phoneNumber is required." });
@@ -250,21 +213,37 @@ VoiceRouter.post("/purchase-number", verifyToken, async (req, res) => {
     });
 
     const numberData = {
+      uuid,
+      userEmail: email,
       phone_number: purchased.phoneNumber,
       friendly_name: purchased.friendlyName,
       sid: purchased.sid,
       region: purchased.region || "",
       locality: purchased.locality || "",
       purchasedAt: new Date().toISOString(),
-      userEmail: identity,
     };
 
-    await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(identity).set(numberData);
-    await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(purchased.phoneNumber).set({
-      phoneNumber: purchased.phoneNumber,
-      identity,
+    const forwardingDefaults = {
+      uuid,
+      userEmail: email,
+      enabled: false,
+      forwardingNumber: "",
+      forwardOnBusy: true,
+      forwardOnNoAnswer: true,
+      forwardOnUnreachable: false,
       updatedAt: new Date().toISOString(),
-    });
+    };
+
+    await Promise.all([
+      defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).set(numberData),
+      defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(purchased.phoneNumber).set({
+        phoneNumber: purchased.phoneNumber,
+        identity: email,
+        uuid,
+        updatedAt: new Date().toISOString(),
+      }),
+      defaultDB.collection(CALL_FORWARDING_COLLECTION).doc(uuid).set(forwardingDefaults, { merge: true }),
+    ]);
 
     return res.json({ success: true, data: numberData });
   } catch (err) {
@@ -273,10 +252,16 @@ VoiceRouter.post("/purchase-number", verifyToken, async (req, res) => {
 });
 
 VoiceRouter.get("/forwarding", verifyToken, async (req, res) => {
-  const identity = req.user.email;
+  const { uuid } = req.user;
   try {
-    const doc = await defaultDB.collection(CALL_FORWARDING_COLLECTION).doc(identity).get();
-    const defaults = { enabled: false, forwardingNumber: "", forwardOnBusy: true, forwardOnNoAnswer: true, forwardOnUnreachable: false };
+    const doc = await defaultDB.collection(CALL_FORWARDING_COLLECTION).doc(uuid).get();
+    const defaults = {
+      enabled: false,
+      forwardingNumber: "",
+      forwardOnBusy: true,
+      forwardOnNoAnswer: true,
+      forwardOnUnreachable: false,
+    };
     return res.json({ success: true, data: doc.exists ? doc.data() : defaults });
   } catch (err) {
     return res.status(500).json({ message: "Failed to fetch forwarding settings." });
@@ -284,12 +269,21 @@ VoiceRouter.get("/forwarding", verifyToken, async (req, res) => {
 });
 
 VoiceRouter.put("/forwarding", verifyToken, async (req, res) => {
-  const identity = req.user.email;
+  const { uuid, email } = req.user;
   const { enabled, forwardingNumber, forwardOnBusy, forwardOnNoAnswer, forwardOnUnreachable } = req.body;
 
   try {
-    const data = { enabled, forwardingNumber, forwardOnBusy, forwardOnNoAnswer, forwardOnUnreachable, updatedAt: new Date().toISOString() };
-    await defaultDB.collection(CALL_FORWARDING_COLLECTION).doc(identity).set(data);
+    const data = {
+      uuid,
+      userEmail: email,
+      enabled,
+      forwardingNumber,
+      forwardOnBusy,
+      forwardOnNoAnswer,
+      forwardOnUnreachable,
+      updatedAt: new Date().toISOString(),
+    };
+    await defaultDB.collection(CALL_FORWARDING_COLLECTION).doc(uuid).set(data);
     return res.json({ success: true, data });
   } catch (err) {
     return res.status(500).json({ message: "Failed to update forwarding settings." });
@@ -299,10 +293,10 @@ VoiceRouter.put("/forwarding", verifyToken, async (req, res) => {
 VoiceRouter.get("/calls", verifyToken, async (req, res) => {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { limit = 50, status, search } = req.query;
-  const identity = req.user.email;
+  const { uuid } = req.user;
 
   try {
-    const userPhoneNumber = await getUserPhoneNumber(identity);
+    const userPhoneNumber = await getUserPhoneNumber(uuid);
     if (!userPhoneNumber) {
       return res.json({ success: true, data: [], total: 0 });
     }
@@ -341,10 +335,10 @@ VoiceRouter.get("/calls", verifyToken, async (req, res) => {
 
 VoiceRouter.get("/calls/stats", verifyToken, async (req, res) => {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
-  const identity = req.user.email;
+  const { uuid } = req.user;
 
   try {
-    const userPhoneNumber = await getUserPhoneNumber(identity);
+    const userPhoneNumber = await getUserPhoneNumber(uuid);
     if (!userPhoneNumber) {
       return res.json({
         success: true,

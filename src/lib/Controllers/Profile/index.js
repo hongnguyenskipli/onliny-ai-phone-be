@@ -3,8 +3,8 @@ import { getProfileService, updateProfileService } from "../../Services/Profile/
 
 const getProfile = async ({ req, res, db = defaultDB }) => {
   try {
-    const email = req.user.email;
-    const result = await getProfileService({ email, db });
+    const { email, uuid } = req.user;
+    const result = await getProfileService({ email, uuid, db });
     return res.status(200).json(result);
   } catch (error) {
     console.error("getProfile error:", error);
@@ -14,7 +14,7 @@ const getProfile = async ({ req, res, db = defaultDB }) => {
 
 const updateProfile = async ({ req, res, db = defaultDB }) => {
   try {
-    const email = req.user.email;
+    const { email } = req.user;
     const { name } = req.body;
 
     const result = await updateProfileService({ email, name, db });

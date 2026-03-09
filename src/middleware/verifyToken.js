@@ -11,7 +11,11 @@ export const verifyToken = (req, res, next) => {
     const token = authHeader.split(" ")[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    req.user = decoded;
+    if (!decoded.email || !decoded.uuid) {
+      return res.status(401).json({ message: "Unauthorized: Invalid token payload." });
+    }
+
+    req.user = { uuid: decoded.uuid, email: decoded.email };
     next();
   } catch (error) {
     if (error.name === "TokenExpiredError") {

@@ -9,7 +9,8 @@
   },
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed": "node src/seeds/seed.js"
   },
   "dependencies": {
     "aws-sdk": "^2.1528.0",

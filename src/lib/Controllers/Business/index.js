@@ -8,13 +8,13 @@ import {
 const createBusiness = async ({ req, res, db = defaultDB }) => {
   try {
     const { name } = req.body;
-    const email = req.user.email;
+    const { email, uuid } = req.user;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: "Business name is required." });
     }
 
-    const result = await createBusinessService({ name, email, db });
+    const result = await createBusinessService({ name, email, uuid, db });
     return res.status(201).json(result);
   } catch (error) {
     console.error("createBusiness error:", error);
@@ -24,7 +24,7 @@ const createBusiness = async ({ req, res, db = defaultDB }) => {
 
 const getBusinesses = async ({ req, res, db = defaultDB }) => {
   try {
-    const email = req.user.email;
+    const { email } = req.user;
     const result = await getBusinessesService({ email, db });
     return res.status(200).json(result);
   } catch (error) {
@@ -36,7 +36,7 @@ const getBusinesses = async ({ req, res, db = defaultDB }) => {
 const deleteBusiness = async ({ req, res, db = defaultDB }) => {
   try {
     const { id } = req.params;
-    const email = req.user.email;
+    const { email } = req.user;
 
     if (!id) {
       return res.status(400).json({ message: "Business ID is required." });

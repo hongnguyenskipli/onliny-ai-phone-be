@@ -2,12 +2,13 @@ import { FieldValue } from "firebase-admin/firestore";
 import { defaultDB } from "../../../server/db.js";
 import { BUSINESS_COLLECTION } from "../../../constants/index.js";
 
-export const createBusinessService = async ({ name, email, db = defaultDB }) => {
+export const createBusinessService = async ({ name, email, uuid, db = defaultDB }) => {
   const docRef = db.collection(BUSINESS_COLLECTION).doc();
   const business = {
     id: docRef.id,
     name: name.trim(),
     ownerEmail: email,
+    ownerUuid: uuid,
     createdAt: FieldValue.serverTimestamp(),
   };
 
