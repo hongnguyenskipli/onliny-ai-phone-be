@@ -45,6 +45,7 @@ const USER_NUMBERS_COLLECTION = "user_phone_numbers";
 const VOICE_BINDINGS_COLLECTION = "voice_bindings";
 const BUSINESS_COLLECTION = "businesses";
 const CALL_FORWARDING_COLLECTION = "call_forwarding";
+const CONTACTS_COLLECTION = "contacts";
 
 async function seed() {
   console.log("Starting seed...");
@@ -110,6 +111,36 @@ async function seed() {
     updatedAt: new Date().toISOString(),
   });
   console.log(`✓ call_forwarding/${uuid}`);
+
+  const sampleContacts = [
+    { name: "Alice Johnson",    phoneNumber: "+12025550101", email: "alice@example.com",   company: "Acme Corp",     notes: "Key client",          avatarColor: "#2B7FFF" },
+    { name: "Bob Smith",        phoneNumber: "+13105550182", email: "bob@example.com",     company: "Smith & Co",    notes: "",                    avatarColor: "#E91E63" },
+    { name: "Carol Williams",   phoneNumber: "+17185550193", email: "carol@example.com",   company: "",              notes: "Call before noon",    avatarColor: "#9C27B0" },
+    { name: "David Lee",        phoneNumber: "+16465550147", email: "",                    company: "Lee Ventures",  notes: "",                    avatarColor: "#00BCD4" },
+    { name: "Eva Martinez",     phoneNumber: "+13235550168", email: "eva@example.com",     company: "Martinez LLC",  notes: "VIP partner",         avatarColor: "#4CAF50" },
+  ];
+
+  const existingContacts = await db.collection(CONTACTS_COLLECTION).where("ownerUuid", "==", uuid).get();
+  if (existingContacts.empty) {
+    for (const c of sampleContacts) {
+      const ref = db.collection(CONTACTS_COLLECTION).doc();
+      await ref.set({
+        id: ref.id,
+        ownerUuid: uuid,
+        name: c.name,
+        phoneNumber: c.phoneNumber,
+        email: c.email,
+        company: c.company,
+        notes: c.notes,
+        avatarColor: c.avatarColor,
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      console.log(`✓ contacts/${ref.id} — ${c.name}`);
+    }
+  } else {
+    console.log(`✓ contacts — skipped (${existingContacts.size} already exist)`);
+  }
 
   console.log("\nSeed completed successfully.");
   console.log(`  email : ${USER_EMAIL}`);
