@@ -1,5 +1,7 @@
 import { Router } from "express";
+import https from "https";
 import twilio from "twilio";
+import jwt from "jsonwebtoken";
 import { verifyToken } from "../middleware/verifyToken.js";
 import { defaultDB } from "../server/db.js";
 import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION, CALL_FORWARDING_COLLECTION } from "../constants/index.js";
@@ -43,6 +45,21 @@ const getCallerIdByEmail = async (email) => {
   } catch (_) {}
   return process.env.TWILIO_PHONE_NUMBER;
 };
+
+// -------------------------------------------------------------------
+// In-memory AMD state store
+// Key: parentCallSid (the SDK client call SID known to the frontend)
+// Value: { answeredBy, childCallSid, humanConnected, timestamp }
+// -------------------------------------------------------------------
+const callAmdState = new Map();
+
+// Cleanup states older than 15 minutes
+setInterval(() => {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  for (const [sid, state] of callAmdState.entries()) {
+    if (state.timestamp < cutoff) callAmdState.delete(sid);
+  }
+}, 5 * 60 * 1000);
 
 const VoiceRouter = Router();
 
@@ -100,6 +117,7 @@ VoiceRouter.post("/bind", verifyToken, async (req, res) => {
 VoiceRouter.post("/incoming", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
   const to = req.body.To;
+  const baseUrl = process.env.SERVER_BASE_URL || `${req.protocol}://${req.get("host")}`;
 
   try {
     let identity = null;
@@ -120,7 +138,12 @@ VoiceRouter.post("/incoming", async (req, res) => {
     }
 
     if (identity) {
-      const dial = twiml.dial();
+      const dial = twiml.dial({
+        record: "do-not-record",
+        machineDetection: "Enable",
+        asyncAmdStatusCallback: `${baseUrl}/api/voice/amd-status`,
+        asyncAmdStatusCallbackMethod: "POST",
+      });
       dial.client(identity);
     } else {
       twiml.say("No client registered to receive calls on this number.");
@@ -137,6 +160,10 @@ VoiceRouter.post("/outgoing", async (req, res) => {
   const to = req.body.To;
   const callerRaw = req.body.Caller || "";
   const identity = callerRaw.startsWith("client:") ? callerRaw.slice(7) : null;
+  const baseUrl = process.env.SERVER_BASE_URL || `${req.protocol}://${req.get("host")}`;
+
+  // parentCallSid = the SDK client call SID - this is what the frontend knows
+  const parentCallSid = req.body.CallSid;
 
   let callerId = process.env.TWILIO_PHONE_NUMBER;
   if (identity) {
@@ -144,7 +171,29 @@ VoiceRouter.post("/outgoing", async (req, res) => {
   }
 
   if (to) {
-    const dial = twiml.dial({ callerId });
+    const dialOptions = {
+      callerId,
+      record: "do-not-record",
+    };
+
+    if (!to.startsWith("client:")) {
+      // Auto-record from the moment the remote party answers (dual channel).
+      // No webhook needed - Twilio handles this automatically.
+      dialOptions.record = "record-from-answer-dual";
+      dialOptions.recordingStatusCallback = `${baseUrl}/api/voice/recording-status`;
+      dialOptions.recordingStatusCallbackMethod = "POST";
+
+      // Pre-create entry so frontend can poll immediately
+      if (parentCallSid) {
+        callAmdState.set(parentCallSid, {
+          childCallSid: null,
+          humanConnected: false,
+          timestamp: Date.now(),
+        });
+      }
+    }
+
+    const dial = twiml.dial(dialOptions);
     if (to.startsWith("client:")) {
       dial.client(to.replace("client:", ""));
     } else {
@@ -309,7 +358,10 @@ VoiceRouter.get("/calls", verifyToken, async (req, res) => {
       client.calls.list({ from: userPhoneNumber, limit: pageLimit }),
     ]);
 
+    const FINAL_STATUSES = ["completed", "no-answer", "busy", "canceled", "failed"];
+
     let calls = [...inbound, ...outbound]
+      .filter((c) => FINAL_STATUSES.includes(c.status))
       .sort((a, b) => b.startTime - a.startTime)
       .map(mapCall);
 
@@ -373,6 +425,222 @@ VoiceRouter.get("/calls/stats", verifyToken, async (req, res) => {
   } catch (err) {
     return res.status(500).json({ message: "Failed to fetch call stats." });
   }
+});
+
+// -------------------------------------------------------------------
+// AMD state polling endpoint - frontend polls this every second to
+// know when the remote party has answered (humanConnected=true).
+//
+// Strategy (most reliable, no webhook dependency):
+//   1. Check in-memory callAmdState first (fast path via /call-answered)
+//   2. If not yet confirmed, query Twilio REST API for the child call
+//      (parentCallSid = our callSid) - if child call is "in-progress",
+//      the remote party has answered.
+//   3. On first detection: persist to callAmdState so subsequent
+//      polls are instant (no repeated Twilio API calls).
+// -------------------------------------------------------------------
+VoiceRouter.get("/calls/:callSid/amd-state", verifyToken, async (req, res) => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  const { callSid } = req.params;
+
+  const state = callAmdState.get(callSid);
+
+  // Fast path: already confirmed
+  if (state?.humanConnected) {
+    return res.json({ success: true, data: state });
+  }
+
+  // Slow path: ask Twilio REST API if the child call is in-progress
+  try {
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const childCalls = await client.calls.list({ parentCallSid: callSid, limit: 1 });
+
+    if (childCalls.length > 0 && childCalls[0].status === "in-progress") {
+      const childCall = childCalls[0];
+      const newState = {
+        ...(state || {}),
+        childCallSid: childCall.sid,
+        humanConnected: true,
+        timestamp: state?.timestamp || Date.now(),
+      };
+      callAmdState.set(callSid, newState);
+      return res.json({ success: true, data: newState });
+    }
+  } catch (_) {}
+
+  return res.json({ success: true, data: state || null });
+});
+
+// -------------------------------------------------------------------
+// Manual recording start - used for incoming calls
+// -------------------------------------------------------------------
+VoiceRouter.post("/calls/:callSid/recordings/start", verifyToken, async (req, res) => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  const { callSid } = req.params;
+
+  try {
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const recording = await client.calls(callSid).recordings.create({
+      recordingChannels: "dual",
+    });
+    return res.json({ success: true, recordingSid: recording.sid });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to start recording." });
+  }
+});
+
+// -------------------------------------------------------------------
+// Stop recording
+// -------------------------------------------------------------------
+VoiceRouter.post("/recordings/:recordingSid/stop", verifyToken, async (req, res) => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  const { recordingSid } = req.params;
+
+  try {
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    await client.recordings(recordingSid).update({ status: "stopped" });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to stop recording." });
+  }
+});
+
+VoiceRouter.post("/recording-status", (req, res) => {
+  res.sendStatus(204);
+});
+
+// -------------------------------------------------------------------
+// call-answered: fires the INSTANT the called party picks up.
+// Twilio sends this via statusCallbackEvent="answered" on the <Number>
+// noun - no AMD delay, completely real-time.
+//
+// This is the primary trigger for:
+//   1. Marking humanConnected=true  → frontend navigates to ActiveCall
+//   2. Starting recording            → capture from first word
+// -------------------------------------------------------------------
+VoiceRouter.post("/call-answered", async (req, res) => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  const { CallStatus, CallSid } = req.body;
+  const parentSid = req.query.parentSid;
+
+  res.sendStatus(204);
+
+  // Only act on the "answered" event (CallStatus = in-progress)
+  if (CallStatus !== "in-progress" || !parentSid) return;
+
+  const storeKey = parentSid;
+  const existing = callAmdState.get(storeKey) || {};
+
+  callAmdState.set(storeKey, {
+    ...existing,
+    childCallSid: CallSid,
+    humanConnected: true,
+    timestamp: existing.timestamp || Date.now(),
+  });
+
+  // Start recording immediately on answer
+  if (CallSid) {
+    try {
+      const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+      await client.calls(CallSid).recordings.create({ recordingChannels: "dual" });
+    } catch (_) {}
+  }
+});
+
+VoiceRouter.post("/amd-status", (req, res) => {
+  res.sendStatus(204);
+});
+
+VoiceRouter.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  const { callSid } = req.params;
+
+  try {
+    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+
+    const [childRecordings, callDetails] = await Promise.all([
+      client.calls(callSid).recordings.list().catch(() => []),
+      client.calls(callSid).fetch().catch(() => null),
+    ]);
+
+    let parentRecordings = [];
+    if (callDetails?.parentCallSid) {
+      parentRecordings = await client.calls(callDetails.parentCallSid).recordings.list().catch(() => []);
+    }
+
+    const seenSids = new Set();
+    const allRecordings = [...childRecordings, ...parentRecordings].filter((r) => {
+      if (seenSids.has(r.sid)) return false;
+      seenSids.add(r.sid);
+      return true;
+    });
+
+    const mapped = allRecordings.map((r) => ({
+      sid: r.sid,
+      duration: parseInt(r.duration) || 0,
+      dateCreated: r.dateCreated?.toISOString() || null,
+      channels: r.channels,
+      source: r.source,
+    }));
+
+    return res.json({ success: true, recordings: mapped });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to fetch recordings." });
+  }
+});
+
+VoiceRouter.get("/recordings/:recordingSid/stream", async (req, res) => {
+  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
+  const { recordingSid } = req.params;
+  const { token } = req.query;
+
+  const authHeader = req.headers.authorization;
+  let verified = false;
+
+  try {
+    if (token) {
+      jwt.verify(token, process.env.JWT_SECRET);
+      verified = true;
+    } else if (authHeader?.startsWith("Bearer ")) {
+      jwt.verify(authHeader.split(" ")[1], process.env.JWT_SECRET);
+      verified = true;
+    }
+  } catch (_) {}
+
+  if (!verified) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+
+  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}.mp3`;
+  const auth = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+
+  const upstreamHeaders = { Authorization: `Basic ${auth}` };
+  if (req.headers.range) {
+    upstreamHeaders["Range"] = req.headers.range;
+  }
+
+  const proxyReq = https.request(twilioUrl, { headers: upstreamHeaders }, (twilioRes) => {
+    const statusCode = twilioRes.statusCode || 200;
+    res.status(statusCode);
+    res.setHeader("Content-Type", twilioRes.headers["content-type"] || "audio/mpeg");
+    res.setHeader("Content-Disposition", `inline; filename="${recordingSid}.mp3"`);
+    res.setHeader("Accept-Ranges", "bytes");
+    if (twilioRes.headers["content-length"]) {
+      res.setHeader("Content-Length", twilioRes.headers["content-length"]);
+    }
+    if (twilioRes.headers["content-range"]) {
+      res.setHeader("Content-Range", twilioRes.headers["content-range"]);
+    }
+    twilioRes.pipe(res);
+  });
+
+  proxyReq.on("error", () => {
+    if (!res.headersSent) {
+      res.status(502).json({ message: "Failed to stream recording." });
+    }
+  });
+
+  proxyReq.end();
 });
 
 export default VoiceRouter;
