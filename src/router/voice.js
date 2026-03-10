@@ -46,14 +46,8 @@ const getCallerIdByEmail = async (email) => {
   return process.env.TWILIO_PHONE_NUMBER;
 };
 
-// -------------------------------------------------------------------
-// In-memory AMD state store
-// Key: parentCallSid (the SDK client call SID known to the frontend)
-// Value: { answeredBy, childCallSid, humanConnected, timestamp }
-// -------------------------------------------------------------------
 const callAmdState = new Map();
 
-// Cleanup states older than 15 minutes
 setInterval(() => {
   const cutoff = Date.now() - 15 * 60 * 1000;
   for (const [sid, state] of callAmdState.entries()) {
@@ -139,10 +133,9 @@ VoiceRouter.post("/incoming", async (req, res) => {
 
     if (identity) {
       const dial = twiml.dial({
-        record: "do-not-record",
-        machineDetection: "Enable",
-        asyncAmdStatusCallback: `${baseUrl}/api/voice/amd-status`,
-        asyncAmdStatusCallbackMethod: "POST",
+        record: "record-from-answer-dual",
+        recordingStatusCallback: `${baseUrl}/api/voice/recording-status`,
+        recordingStatusCallbackMethod: "POST",
       });
       dial.client(identity);
     } else {
@@ -161,8 +154,6 @@ VoiceRouter.post("/outgoing", async (req, res) => {
   const callerRaw = req.body.Caller || "";
   const identity = callerRaw.startsWith("client:") ? callerRaw.slice(7) : null;
   const baseUrl = process.env.SERVER_BASE_URL || `${req.protocol}://${req.get("host")}`;
-
-  // parentCallSid = the SDK client call SID - this is what the frontend knows
   const parentCallSid = req.body.CallSid;
 
   let callerId = process.env.TWILIO_PHONE_NUMBER;
@@ -177,13 +168,10 @@ VoiceRouter.post("/outgoing", async (req, res) => {
     };
 
     if (!to.startsWith("client:")) {
-      // Auto-record from the moment the remote party answers (dual channel).
-      // No webhook needed - Twilio handles this automatically.
       dialOptions.record = "record-from-answer-dual";
       dialOptions.recordingStatusCallback = `${baseUrl}/api/voice/recording-status`;
       dialOptions.recordingStatusCallbackMethod = "POST";
 
-      // Pre-create entry so frontend can poll immediately
       if (parentCallSid) {
         callAmdState.set(parentCallSid, {
           childCallSid: null,
@@ -197,7 +185,14 @@ VoiceRouter.post("/outgoing", async (req, res) => {
     if (to.startsWith("client:")) {
       dial.client(to.replace("client:", ""));
     } else {
-      dial.number(to);
+      dial.number(
+        {
+          statusCallbackEvent: "answered",
+          statusCallback: `${baseUrl}/api/voice/call-answered?parentSid=${parentCallSid}`,
+          statusCallbackMethod: "POST",
+        },
+        to
+      );
     }
   } else {
     twiml.say("No destination provided.");
@@ -427,30 +422,16 @@ VoiceRouter.get("/calls/stats", verifyToken, async (req, res) => {
   }
 });
 
-// -------------------------------------------------------------------
-// AMD state polling endpoint - frontend polls this every second to
-// know when the remote party has answered (humanConnected=true).
-//
-// Strategy (most reliable, no webhook dependency):
-//   1. Check in-memory callAmdState first (fast path via /call-answered)
-//   2. If not yet confirmed, query Twilio REST API for the child call
-//      (parentCallSid = our callSid) - if child call is "in-progress",
-//      the remote party has answered.
-//   3. On first detection: persist to callAmdState so subsequent
-//      polls are instant (no repeated Twilio API calls).
-// -------------------------------------------------------------------
 VoiceRouter.get("/calls/:callSid/amd-state", verifyToken, async (req, res) => {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { callSid } = req.params;
 
   const state = callAmdState.get(callSid);
 
-  // Fast path: already confirmed
   if (state?.humanConnected) {
     return res.json({ success: true, data: state });
   }
 
-  // Slow path: ask Twilio REST API if the child call is in-progress
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
     const childCalls = await client.calls.list({ parentCallSid: callSid, limit: 1 });
@@ -471,9 +452,6 @@ VoiceRouter.get("/calls/:callSid/amd-state", verifyToken, async (req, res) => {
   return res.json({ success: true, data: state || null });
 });
 
-// -------------------------------------------------------------------
-// Manual recording start - used for incoming calls
-// -------------------------------------------------------------------
 VoiceRouter.post("/calls/:callSid/recordings/start", verifyToken, async (req, res) => {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { callSid } = req.params;
@@ -489,9 +467,6 @@ VoiceRouter.post("/calls/:callSid/recordings/start", verifyToken, async (req, re
   }
 });
 
-// -------------------------------------------------------------------
-// Stop recording
-// -------------------------------------------------------------------
 VoiceRouter.post("/recordings/:recordingSid/stop", verifyToken, async (req, res) => {
   const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { recordingSid } = req.params;
@@ -509,42 +484,21 @@ VoiceRouter.post("/recording-status", (req, res) => {
   res.sendStatus(204);
 });
 
-// -------------------------------------------------------------------
-// call-answered: fires the INSTANT the called party picks up.
-// Twilio sends this via statusCallbackEvent="answered" on the <Number>
-// noun - no AMD delay, completely real-time.
-//
-// This is the primary trigger for:
-//   1. Marking humanConnected=true  → frontend navigates to ActiveCall
-//   2. Starting recording            → capture from first word
-// -------------------------------------------------------------------
 VoiceRouter.post("/call-answered", async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { CallStatus, CallSid } = req.body;
   const parentSid = req.query.parentSid;
 
   res.sendStatus(204);
 
-  // Only act on the "answered" event (CallStatus = in-progress)
   if (CallStatus !== "in-progress" || !parentSid) return;
 
-  const storeKey = parentSid;
-  const existing = callAmdState.get(storeKey) || {};
-
-  callAmdState.set(storeKey, {
+  const existing = callAmdState.get(parentSid) || {};
+  callAmdState.set(parentSid, {
     ...existing,
     childCallSid: CallSid,
     humanConnected: true,
     timestamp: existing.timestamp || Date.now(),
   });
-
-  // Start recording immediately on answer
-  if (CallSid) {
-    try {
-      const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
-      await client.calls(CallSid).recordings.create({ recordingChannels: "dual" });
-    } catch (_) {}
-  }
 });
 
 VoiceRouter.post("/amd-status", (req, res) => {
@@ -558,7 +512,7 @@ VoiceRouter.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
   try {
     const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-    const [childRecordings, callDetails] = await Promise.all([
+    const [directRecordings, callDetails] = await Promise.all([
       client.calls(callSid).recordings.list().catch(() => []),
       client.calls(callSid).fetch().catch(() => null),
     ]);
@@ -569,7 +523,7 @@ VoiceRouter.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
     }
 
     const seenSids = new Set();
-    const allRecordings = [...childRecordings, ...parentRecordings].filter((r) => {
+    const allRecordings = [...directRecordings, ...parentRecordings].filter((r) => {
       if (seenSids.has(r.sid)) return false;
       seenSids.add(r.sid);
       return true;
