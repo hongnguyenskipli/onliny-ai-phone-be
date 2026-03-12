@@ -55,6 +55,32 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000);
 
+let _twilioClient = null;
+const getTwilioClient = () => {
+  if (!_twilioClient) {
+    _twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  }
+  return _twilioClient;
+};
+
+const _cache = new Map();
+const CACHE_TTL = 60_000;
+
+const cacheGet = (key) => {
+  const entry = _cache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL) { _cache.delete(key); return null; }
+  return entry.data;
+};
+const cacheSet = (key, data) => _cache.set(key, {data, ts: Date.now()});
+
+setInterval(() => {
+  const cutoff = Date.now() - CACHE_TTL;
+  for (const [k, v] of _cache.entries()) {
+    if (v.ts < cutoff) _cache.delete(k);
+  }
+}, 60_000);
+
 const VoiceRouter = Router();
 
 VoiceRouter.get("/token", verifyToken, (req, res) => {
@@ -202,11 +228,10 @@ VoiceRouter.post("/outgoing", async (req, res) => {
 });
 
 VoiceRouter.get("/available-numbers", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { type = "Local", areaCode, country = "US", limit = 20 } = req.query;
 
   try {
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     const numberType = type === "TollFree" ? "tollFree" : "local";
     const params = { limit: parseInt(limit) };
     if (numberType === "local" && areaCode) params.areaCode = areaCode;
@@ -241,7 +266,7 @@ VoiceRouter.get("/my-number", verifyToken, async (req, res) => {
 });
 
 VoiceRouter.post("/purchase-number", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_APP_SID } = process.env;
+  const { TWILIO_APP_SID } = process.env;
   const { phoneNumber } = req.body;
   const { uuid, email } = req.user;
 
@@ -250,7 +275,7 @@ VoiceRouter.post("/purchase-number", verifyToken, async (req, res) => {
   }
 
   try {
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     const purchased = await client.incomingPhoneNumbers.create({
       phoneNumber,
       voiceApplicationSid: TWILIO_APP_SID,
@@ -335,7 +360,6 @@ VoiceRouter.put("/forwarding", verifyToken, async (req, res) => {
 });
 
 VoiceRouter.get("/calls", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { limit = 50, status, search } = req.query;
   const { uuid } = req.user;
 
@@ -345,43 +369,46 @@ VoiceRouter.get("/calls", verifyToken, async (req, res) => {
       return res.json({ success: true, data: [], total: 0 });
     }
 
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     const pageLimit = Math.min(parseInt(limit) || 50, 200);
-
-    const [inbound, outbound] = await Promise.all([
-      client.calls.list({ to: userPhoneNumber, limit: pageLimit }),
-      client.calls.list({ from: userPhoneNumber, limit: pageLimit }),
-    ]);
-
+    const cacheKey = `calls:${uuid}:${pageLimit}`;
     const FINAL_STATUSES = ["completed", "no-answer", "busy", "canceled", "failed"];
 
-    let calls = [...inbound, ...outbound]
-      .filter((c) => FINAL_STATUSES.includes(c.status))
-      .sort((a, b) => b.startTime - a.startTime)
-      .map(mapCall);
+    let calls = cacheGet(cacheKey);
+    if (!calls) {
+      const [inbound, outbound] = await Promise.all([
+        client.calls.list({ to: userPhoneNumber, limit: pageLimit }),
+        client.calls.list({ from: userPhoneNumber, limit: pageLimit }),
+      ]);
+      calls = [...inbound, ...outbound]
+        .filter((c) => FINAL_STATUSES.includes(c.status))
+        .sort((a, b) => b.startTime - a.startTime)
+        .map(mapCall);
+      cacheSet(cacheKey, calls);
+    }
 
+    let result = calls;
     if (status === "missed") {
-      calls = calls.filter(c => c.status === "missed");
+      result = result.filter(c => c.status === "missed");
     } else if (status === "completed") {
-      calls = calls.filter(c => c.status === "completed");
+      result = result.filter(c => c.status === "completed");
     }
 
     if (search) {
       const q = search.toLowerCase();
-      calls = calls.filter(c =>
+      result = result.filter(c =>
         c.callerNumber?.toLowerCase().includes(q) ||
         c.callerName?.toLowerCase().includes(q)
       );
     }
 
-    return res.json({ success: true, data: calls, total: calls.length });
+    return res.json({ success: true, data: result, total: result.length });
   } catch (err) {
     return res.status(500).json({ message: "Failed to fetch call logs." });
   }
 });
 
 VoiceRouter.get("/calls/stats", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { uuid } = req.user;
 
   try {
@@ -393,7 +420,7 @@ VoiceRouter.get("/calls/stats", verifyToken, async (req, res) => {
       });
     }
 
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -422,8 +449,44 @@ VoiceRouter.get("/calls/stats", verifyToken, async (req, res) => {
   }
 });
 
+VoiceRouter.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
+  const { uuid } = req.user;
+  const { phoneNumber } = req.params;
+
+  try {
+    const userPhoneNumber = await getUserPhoneNumber(uuid);
+    if (!userPhoneNumber) {
+      return res.json({ success: true, calls: [] });
+    }
+
+    const client = getTwilioClient();
+    const FINAL_STATUSES = ["completed", "no-answer", "busy", "canceled", "failed"];
+    const cacheKey = `thread:${uuid}:${phoneNumber}`;
+
+    let calls = cacheGet(cacheKey);
+    if (!calls) {
+      const [outbound, inbound] = await Promise.all([
+        client.calls.list({ from: userPhoneNumber, to: phoneNumber, limit: 100 }).catch(() => []),
+        client.calls.list({ from: phoneNumber, to: userPhoneNumber, limit: 100 }).catch(() => []),
+      ]);
+
+      calls = [...outbound, ...inbound]
+        .filter(c => FINAL_STATUSES.includes(c.status))
+        .sort((a, b) => a.startTime - b.startTime)
+        .map(c => ({
+          ...mapCall(c),
+          durationSeconds: parseInt(c.duration) || 0,
+        }));
+      cacheSet(cacheKey, calls);
+    }
+
+    return res.json({ success: true, calls });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: "Failed to fetch contact call thread." });
+  }
+});
+
 VoiceRouter.get("/calls/:callSid/amd-state", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { callSid } = req.params;
 
   const state = callAmdState.get(callSid);
@@ -433,7 +496,7 @@ VoiceRouter.get("/calls/:callSid/amd-state", verifyToken, async (req, res) => {
   }
 
   try {
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     const childCalls = await client.calls.list({ parentCallSid: callSid, limit: 1 });
 
     if (childCalls.length > 0 && childCalls[0].status === "in-progress") {
@@ -453,11 +516,10 @@ VoiceRouter.get("/calls/:callSid/amd-state", verifyToken, async (req, res) => {
 });
 
 VoiceRouter.post("/calls/:callSid/recordings/start", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { callSid } = req.params;
 
   try {
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     const recording = await client.calls(callSid).recordings.create({
       recordingChannels: "dual",
     });
@@ -468,11 +530,10 @@ VoiceRouter.post("/calls/:callSid/recordings/start", verifyToken, async (req, re
 });
 
 VoiceRouter.post("/recordings/:recordingSid/stop", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { recordingSid } = req.params;
 
   try {
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
     await client.recordings(recordingSid).update({ status: "stopped" });
     return res.json({ success: true });
   } catch (err) {
@@ -506,11 +567,10 @@ VoiceRouter.post("/amd-status", (req, res) => {
 });
 
 VoiceRouter.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
-  const { TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN } = process.env;
   const { callSid } = req.params;
 
   try {
-    const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+    const client = getTwilioClient();
 
     const [directRecordings, callDetails] = await Promise.all([
       client.calls(callSid).recordings.list().catch(() => []),
