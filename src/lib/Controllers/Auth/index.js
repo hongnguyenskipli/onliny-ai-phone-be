@@ -3,7 +3,7 @@ import { sendOtpService, verifyOtpService } from "../../Services/Auth/index.js";
 import { defaultDB } from "../../../server/db.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
+//send otp to email and save in db with expiry time of 5 minutes
 const sendOtp = async ({ req, res, db = defaultDB }) => {
   try {
     const { email } = req.body;
