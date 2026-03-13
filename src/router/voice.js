@@ -236,7 +236,29 @@ VoiceRouter.get("/available-numbers", verifyToken, async (req, res) => {
     const params = { limit: parseInt(limit) };
     if (numberType === "local" && areaCode) params.areaCode = areaCode;
 
-    const numbers = await client.availablePhoneNumbers(country)[numberType].list(params);
+    const [numbers, pricing] = await Promise.all([
+      client.availablePhoneNumbers(country)[numberType].list(params),
+      client.pricing.v1.phoneNumbers.countries(country).fetch().catch((err) => {
+        console.error("[pricing] fetch error:", err?.message);
+        return null;
+      }),
+    ]);
+
+    let price = null;
+    const phonePrices = pricing?.phoneNumberPrices;
+    if (Array.isArray(phonePrices) && phonePrices.length) {
+      const twilioType = type === "TollFree" ? "toll free" : "local";
+      const priceEntry = phonePrices.find(
+        p => (p.number_type || "").toLowerCase() === twilioType
+      );
+      if (priceEntry) {
+        price = {
+          amount: priceEntry.current_price ?? priceEntry.base_price,
+          currency: pricing.priceUnit ?? "USD",
+        };
+      }
+    }
+
     return res.json({
       success: true,
       data: numbers.map(n => ({
@@ -245,6 +267,7 @@ VoiceRouter.get("/available-numbers", verifyToken, async (req, res) => {
         region: n.region || "",
         locality: n.locality || "",
         iso_country: n.isoCountry,
+        price,
       })),
     });
   } catch (err) {
