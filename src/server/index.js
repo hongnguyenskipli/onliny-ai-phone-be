@@ -5,6 +5,7 @@ import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import aws from "aws-sdk";
 import nodemailer from "nodemailer";
+import { apiReference } from "@scalar/express-api-reference";
 
 import { ALLOWED_ORIGINS, AWS_CONFIG_ROOT } from "../constants/index.js";
 import AuthRouter from "../router/auth.js";
@@ -13,6 +14,7 @@ import ProfileRouter from "../router/profile.js";
 import VoiceRouter from "../router/voice.js";
 import ContactRouter from "../router/contact.js";
 import { defaultDB } from "./db.js";
+import { openApiSpec } from "../docs/openapi.js";
 
 dotenv.config();
 
@@ -33,6 +35,16 @@ app.get("/health", (req, res) => {
   if (!defaultDB) return res.status(503).json({ status: "error", message: "Cannot connect to the database" });
   res.status(200).json({ status: "ok" });
 });
+
+app.get("/api/openapi.json", (req, res) => res.json(openApiSpec));
+
+app.use(
+  "/api/docs",
+  apiReference({
+    spec: { content: openApiSpec },
+    theme: "purple",
+  })
+);
 
 app.use("/api/auth", AuthRouter);
 app.use("/api/business", BusinessRouter);
