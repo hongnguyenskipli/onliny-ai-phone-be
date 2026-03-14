@@ -1,7 +1,12 @@
 const err = (description) => ({
   description,
-  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 });
+
+const unauthorized = {
+  description: "Unauthorized - missing/invalid/expired token. See the message for details.",
+  content: { "application/json": { schema: { $ref: "#/components/schemas/UnauthorizedError" } } },
+};
 
 export const businessPaths = {
   "/api/business": {
@@ -9,8 +14,33 @@ export const businessPaths = {
       tags: ["Business"],
       summary: "Get all businesses",
       responses: {
-        200: { description: "List of businesses" },
-        401: err("Unauthorized: Missing or invalid token"),
+        200: {
+          description: "List of businesses",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  businesses: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        name: { type: "string" },
+                        ownerEmail: { type: "string", format: "email" },
+                        ownerUuid: { type: "string" },
+                        createdAt: { type: "string", format: "date-time", nullable: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        401: unauthorized,
         500: err("Failed to fetch businesses."),
       },
     },
@@ -32,9 +62,31 @@ export const businessPaths = {
         },
       },
       responses: {
-        201: { description: "Business created successfully" },
+        201: {
+          description: "Business created successfully",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  business: {
+                    type: "object",
+                    properties: {
+                      id: { type: "string" },
+                      name: { type: "string" },
+                      ownerEmail: { type: "string", format: "email" },
+                      ownerUuid: { type: "string" },
+                      createdAt: { type: "string", format: "date-time", nullable: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
         400: err("Business name is required."),
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to create business."),
       },
     },
@@ -50,10 +102,10 @@ export const businessPaths = {
       responses: {
         200: {
           description: "Business deleted",
-          content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean", example: true } } } } },
+          content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } },
         },
         400: err("Business ID is required."),
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         403: err("Forbidden: You do not own this business"),
         404: err("Business not found"),
         500: err("Failed to delete business."),

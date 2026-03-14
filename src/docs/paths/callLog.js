@@ -1,7 +1,12 @@
 const err = (description) => ({
   description,
-  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 });
+
+const unauthorized = {
+  description: "Unauthorized - missing/invalid/expired token. See the message for details.",
+  content: { "application/json": { schema: { $ref: "#/components/schemas/UnauthorizedError" } } },
+};
 
 export const callLogPaths = {
   "/api/voice/calls": {
@@ -21,7 +26,7 @@ export const callLogPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   data: { type: "array", items: { $ref: "#/components/schemas/CallLog" } },
                   total: { type: "integer" },
                 },
@@ -29,7 +34,7 @@ export const callLogPaths = {
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to fetch call logs."),
       },
     },
@@ -47,14 +52,14 @@ export const callLogPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   data: { $ref: "#/components/schemas/CallStats" },
                 },
               },
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to fetch call stats."),
       },
     },
@@ -75,14 +80,14 @@ export const callLogPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   calls: { type: "array", items: { $ref: "#/components/schemas/CallLog" } },
                 },
               },
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to fetch contact call thread."),
       },
     },
@@ -103,14 +108,14 @@ export const callLogPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   recordings: { type: "array", items: { $ref: "#/components/schemas/Recording" } },
                 },
               },
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to fetch recordings."),
       },
     },
@@ -138,7 +143,7 @@ export const callLogPaths = {
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to start recording."),
       },
     },
@@ -154,9 +159,9 @@ export const callLogPaths = {
       responses: {
         200: {
           description: "Recording stopped",
-          content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" } } } } },
+          content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to stop recording."),
       },
     },
@@ -177,7 +182,7 @@ export const callLogPaths = {
       ],
       responses: {
         200: { description: "Audio stream (audio/mpeg)" },
-        401: err("Unauthorized"),
+        401: unauthorized,
         502: err("Failed to stream recording."),
       },
     },

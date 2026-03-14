@@ -2,7 +2,22 @@ export const commonSchemas = {
   Error: {
     type: "object",
     properties: {
-      message: { type: "string" },
+      message: { type: "string", example: "An error occurred." },
+    },
+  },
+  UnauthorizedError: {
+    type: "object",
+    properties: {
+      message: {
+        type: "string",
+        enum: [
+          "Unauthorized: Missing token.",
+          "Unauthorized: Invalid token payload.",
+          "Unauthorized: Token has expired.",
+          "Unauthorized: Invalid token.",
+        ],
+        example: "Unauthorized: Missing token.",
+      },
     },
   },
   Success: {

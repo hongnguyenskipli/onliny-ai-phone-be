@@ -1,7 +1,12 @@
 const err = (description) => ({
   description,
-  content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean", example: false }, message: { type: "string" } } } } },
+  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 });
+
+const unauthorized = {
+  description: "Unauthorized - missing/invalid/expired token. See the message for details.",
+  content: { "application/json": { schema: { $ref: "#/components/schemas/UnauthorizedError" } } },
+};
 
 export const contactPaths = {
   "/api/contacts": {
@@ -19,14 +24,14 @@ export const contactPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   data: { type: "array", items: { $ref: "#/components/schemas/Contact" } },
                 },
               },
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Internal server error."),
       },
     },
@@ -53,9 +58,12 @@ export const contactPaths = {
         },
       },
       responses: {
-        201: { description: "Contact created successfully" },
+        201: {
+          description: "Contact created successfully",
+          content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } },
+        },
         400: err("Name is required. / Phone number is required."),
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Internal server error."),
       },
     },
@@ -73,7 +81,7 @@ export const contactPaths = {
           description: "Contact data",
           content: { "application/json": { schema: { $ref: "#/components/schemas/Contact" } } },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         403: err("Forbidden."),
         404: err("Contact not found."),
         500: err("Internal server error."),
@@ -104,8 +112,8 @@ export const contactPaths = {
         },
       },
       responses: {
-        200: { description: "Contact updated successfully" },
-        401: err("Unauthorized: Missing or invalid token"),
+        200: { description: "Contact updated successfully", content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } } },
+        401: unauthorized,
         403: err("Forbidden."),
         404: err("Contact not found."),
         500: err("Internal server error."),
@@ -118,8 +126,8 @@ export const contactPaths = {
         { name: "id", in: "path", required: true, schema: { type: "string" } },
       ],
       responses: {
-        200: { description: "Contact deleted successfully" },
-        401: err("Unauthorized: Missing or invalid token"),
+        200: { description: "Contact deleted successfully", content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } } },
+        401: unauthorized,
         403: err("Forbidden."),
         404: err("Contact not found."),
         500: err("Internal server error."),

@@ -1,7 +1,12 @@
 const err = (description) => ({
   description,
-  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 });
+
+const unauthorized = {
+  description: "Unauthorized - missing/invalid/expired token. See the message for details.",
+  content: { "application/json": { schema: { $ref: "#/components/schemas/UnauthorizedError" } } },
+};
 
 export const phoneNumberPaths = {
   "/api/voice/available-numbers": {
@@ -32,14 +37,14 @@ export const phoneNumberPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   data: { type: "array", items: { $ref: "#/components/schemas/PhoneNumber" } },
                 },
               },
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to fetch available numbers."),
       },
     },
@@ -57,14 +62,14 @@ export const phoneNumberPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   data: { nullable: true, $ref: "#/components/schemas/PhoneNumber" },
                 },
               },
             },
           },
         },
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to fetch phone number."),
       },
     },
@@ -89,9 +94,9 @@ export const phoneNumberPaths = {
         },
       },
       responses: {
-        200: { description: "Number purchased successfully" },
+        200: { description: "Number purchased successfully", content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } } },
         400: err("phoneNumber is required."),
-        401: err("Unauthorized: Missing or invalid token"),
+        401: unauthorized,
         500: err("Failed to purchase phone number."),
       },
     },

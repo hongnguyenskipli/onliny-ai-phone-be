@@ -1,7 +1,12 @@
 const err = (description) => ({
   description,
-  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+  content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } },
 });
+
+const unauthorized = {
+  description: "Unauthorized - missing/invalid/expired token. See the message for details.",
+  content: { "application/json": { schema: { $ref: "#/components/schemas/UnauthorizedError" } } },
+};
 
 export const profilePaths = {
   "/api/profile": {
@@ -9,8 +14,35 @@ export const profilePaths = {
       tags: ["Profile"],
       summary: "Get user profile",
       responses: {
-        200: { description: "User profile data" },
-        401: err("Unauthorized: Missing or invalid token"),
+        200: {
+          description: "User profile data",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  profile: {
+                    type: "object",
+                    properties: {
+                      uuid: { type: "string" },
+                      email: { type: "string", format: "email" },
+                      name: { type: "string" },
+                      company: { type: "string" },
+                      phoneNumber: { type: "string", nullable: true },
+                      phoneRegion: { type: "string" },
+                      phoneLocality: { type: "string" },
+                      phoneFriendlyName: { type: "string", nullable: true },
+                      createdAt: { type: "string", format: "date-time", nullable: true },
+                      updatedAt: { type: "string", format: "date-time", nullable: true },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        401: unauthorized,
         500: err("Failed to fetch profile."),
       },
     },
@@ -31,8 +63,15 @@ export const profilePaths = {
         },
       },
       responses: {
-        200: { description: "Profile updated successfully" },
-        401: err("Unauthorized: Missing or invalid token"),
+        200: {
+          description: "Profile updated successfully",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/Success" },
+            },
+          },
+        },
+        401: unauthorized,
         500: err("Failed to update profile."),
       },
     },
