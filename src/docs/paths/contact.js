@@ -1,8 +1,16 @@
+const err = (description) => ({
+  description,
+  content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean", example: false }, message: { type: "string" } } } } },
+});
+
 export const contactPaths = {
   "/api/contacts": {
     get: {
       tags: ["Contacts"],
       summary: "Get all contacts",
+      parameters: [
+        { name: "search", in: "query", schema: { type: "string" }, description: "Search by name or phone" },
+      ],
       responses: {
         200: {
           description: "List of contacts",
@@ -18,7 +26,8 @@ export const contactPaths = {
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Internal server error."),
       },
     },
     post: {
@@ -30,20 +39,24 @@ export const contactPaths = {
           "application/json": {
             schema: {
               type: "object",
-              required: ["name", "phone"],
+              required: ["name", "phoneNumber"],
               properties: {
                 name: { type: "string", example: "John Doe" },
-                phone: { type: "string", example: "+15551234567" },
+                phoneNumber: { type: "string", example: "+15551234567" },
                 email: { type: "string", format: "email", example: "john@example.com" },
+                company: { type: "string", example: "Acme Corp" },
                 notes: { type: "string", example: "VIP client" },
+                avatarColor: { type: "string", example: "#FF5733" },
               },
             },
           },
         },
       },
       responses: {
-        200: { description: "Contact created" },
-        401: { description: "Unauthorized" },
+        201: { description: "Contact created successfully" },
+        400: err("Name is required. / Phone number is required."),
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Internal server error."),
       },
     },
   },
@@ -58,14 +71,12 @@ export const contactPaths = {
       responses: {
         200: {
           description: "Contact data",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/Contact" },
-            },
-          },
+          content: { "application/json": { schema: { $ref: "#/components/schemas/Contact" } } },
         },
-        401: { description: "Unauthorized" },
-        404: { description: "Contact not found" },
+        401: err("Unauthorized: Missing or invalid token"),
+        403: err("Forbidden."),
+        404: err("Contact not found."),
+        500: err("Internal server error."),
       },
     },
     put: {
@@ -82,17 +93,22 @@ export const contactPaths = {
               type: "object",
               properties: {
                 name: { type: "string" },
-                phone: { type: "string" },
+                phoneNumber: { type: "string" },
                 email: { type: "string", format: "email" },
+                company: { type: "string" },
                 notes: { type: "string" },
+                avatarColor: { type: "string" },
               },
             },
           },
         },
       },
       responses: {
-        200: { description: "Contact updated" },
-        401: { description: "Unauthorized" },
+        200: { description: "Contact updated successfully" },
+        401: err("Unauthorized: Missing or invalid token"),
+        403: err("Forbidden."),
+        404: err("Contact not found."),
+        500: err("Internal server error."),
       },
     },
     delete: {
@@ -102,8 +118,11 @@ export const contactPaths = {
         { name: "id", in: "path", required: true, schema: { type: "string" } },
       ],
       responses: {
-        200: { description: "Contact deleted" },
-        401: { description: "Unauthorized" },
+        200: { description: "Contact deleted successfully" },
+        401: err("Unauthorized: Missing or invalid token"),
+        403: err("Forbidden."),
+        404: err("Contact not found."),
+        500: err("Internal server error."),
       },
     },
   },

@@ -1,3 +1,8 @@
+const err = (description) => ({
+  description,
+  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+});
+
 export const phoneNumberPaths = {
   "/api/voice/available-numbers": {
     get: {
@@ -16,16 +21,8 @@ export const phoneNumberPaths = {
           schema: { type: "string", example: "415" },
           description: "Filter by area code (Local only)",
         },
-        {
-          name: "country",
-          in: "query",
-          schema: { type: "string", default: "US" },
-        },
-        {
-          name: "limit",
-          in: "query",
-          schema: { type: "integer", default: 20 },
-        },
+        { name: "country", in: "query", schema: { type: "string", default: "US" } },
+        { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
       ],
       responses: {
         200: {
@@ -36,16 +33,14 @@ export const phoneNumberPaths = {
                 type: "object",
                 properties: {
                   success: { type: "boolean" },
-                  data: {
-                    type: "array",
-                    items: { $ref: "#/components/schemas/PhoneNumber" },
-                  },
+                  data: { type: "array", items: { $ref: "#/components/schemas/PhoneNumber" } },
                 },
               },
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch available numbers."),
       },
     },
   },
@@ -56,20 +51,21 @@ export const phoneNumberPaths = {
       summary: "Get the current user's purchased phone number",
       responses: {
         200: {
-          description: "User phone number data",
+          description: "User phone number or null if none purchased",
           content: {
             "application/json": {
               schema: {
                 type: "object",
                 properties: {
                   success: { type: "boolean" },
-                  data: { $ref: "#/components/schemas/PhoneNumber" },
+                  data: { nullable: true, $ref: "#/components/schemas/PhoneNumber" },
                 },
               },
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch phone number."),
       },
     },
   },
@@ -94,8 +90,9 @@ export const phoneNumberPaths = {
       },
       responses: {
         200: { description: "Number purchased successfully" },
-        400: { description: "phoneNumber is required" },
-        401: { description: "Unauthorized" },
+        400: err("phoneNumber is required."),
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to purchase phone number."),
       },
     },
   },

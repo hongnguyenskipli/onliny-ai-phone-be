@@ -1,16 +1,17 @@
+const err = (description) => ({
+  description,
+  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+});
+
 export const callLogPaths = {
   "/api/voice/calls": {
     get: {
       tags: ["Call Logs"],
       summary: "Get call history",
       parameters: [
-        { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
-        {
-          name: "status",
-          in: "query",
-          schema: { type: "string", enum: ["missed", "completed"] },
-        },
-        { name: "search", in: "query", schema: { type: "string" } },
+        { name: "limit", in: "query", schema: { type: "integer", default: 50, maximum: 200 } },
+        { name: "status", in: "query", schema: { type: "string", enum: ["missed", "completed"] } },
+        { name: "search", in: "query", schema: { type: "string" }, description: "Search by caller number or name" },
       ],
       responses: {
         200: {
@@ -28,7 +29,8 @@ export const callLogPaths = {
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch call logs."),
       },
     },
   },
@@ -52,7 +54,8 @@ export const callLogPaths = {
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch call stats."),
       },
     },
   },
@@ -62,12 +65,7 @@ export const callLogPaths = {
       tags: ["Call Logs"],
       summary: "Get call thread with a specific contact",
       parameters: [
-        {
-          name: "phoneNumber",
-          in: "path",
-          required: true,
-          schema: { type: "string", example: "+15551234567" },
-        },
+        { name: "phoneNumber", in: "path", required: true, schema: { type: "string", example: "+15551234567" } },
       ],
       responses: {
         200: {
@@ -84,7 +82,8 @@ export const callLogPaths = {
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch contact call thread."),
       },
     },
   },
@@ -111,7 +110,8 @@ export const callLogPaths = {
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch recordings."),
       },
     },
   },
@@ -131,14 +131,15 @@ export const callLogPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
+                  success: { type: "boolean", example: true },
                   recordingSid: { type: "string" },
                 },
               },
             },
           },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to start recording."),
       },
     },
   },
@@ -151,8 +152,12 @@ export const callLogPaths = {
         { name: "recordingSid", in: "path", required: true, schema: { type: "string" } },
       ],
       responses: {
-        200: { description: "Recording stopped" },
-        401: { description: "Unauthorized" },
+        200: {
+          description: "Recording stopped",
+          content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean" } } } } },
+        },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to stop recording."),
       },
     },
   },
@@ -172,7 +177,8 @@ export const callLogPaths = {
       ],
       responses: {
         200: { description: "Audio stream (audio/mpeg)" },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized"),
+        502: err("Failed to stream recording."),
       },
     },
   },

@@ -1,3 +1,15 @@
+const errorSchema = (msg) => ({
+  description: msg,
+  content: {
+    "application/json": {
+      schema: {
+        type: "object",
+        properties: { message: { type: "string" } },
+      },
+    },
+  },
+});
+
 export const authPaths = {
   "/api/auth/send-otp": {
     post: {
@@ -19,8 +31,22 @@ export const authPaths = {
         },
       },
       responses: {
-        200: { description: "OTP sent successfully" },
-        400: { description: "Invalid request" },
+        200: {
+          description: "OTP sent successfully",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  message: { type: "string", example: "OTP sent to your email." },
+                },
+              },
+            },
+          },
+        },
+        400: errorSchema("A valid email is required."),
+        500: errorSchema("Failed to send OTP. Please try again."),
       },
     },
   },
@@ -53,14 +79,25 @@ export const authPaths = {
               schema: {
                 type: "object",
                 properties: {
-                  success: { type: "boolean" },
-                  token: { type: "string" },
+                  success: { type: "boolean", example: true },
+                  token: { type: "string", example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." },
                 },
               },
             },
           },
         },
-        401: { description: "Invalid OTP" },
+        400: {
+          description: "Missing fields or invalid/expired OTP",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: { message: { type: "string", example: "Email and OTP are required." } },
+              },
+            },
+          },
+        },
+        500: errorSchema("Failed to verify OTP. Please try again."),
       },
     },
   },

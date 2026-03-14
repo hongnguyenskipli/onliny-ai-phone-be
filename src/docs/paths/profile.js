@@ -1,3 +1,8 @@
+const err = (description) => ({
+  description,
+  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+});
+
 export const profilePaths = {
   "/api/profile": {
     get: {
@@ -5,7 +10,8 @@ export const profilePaths = {
       summary: "Get user profile",
       responses: {
         200: { description: "User profile data" },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch profile."),
       },
     },
     put: {
@@ -19,15 +25,15 @@ export const profilePaths = {
               type: "object",
               properties: {
                 name: { type: "string", example: "John Doe" },
-                phone: { type: "string", example: "+15551234567" },
               },
             },
           },
         },
       },
       responses: {
-        200: { description: "Profile updated" },
-        401: { description: "Unauthorized" },
+        200: { description: "Profile updated successfully" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to update profile."),
       },
     },
   },

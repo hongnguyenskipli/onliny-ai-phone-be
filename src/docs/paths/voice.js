@@ -1,3 +1,8 @@
+const err = (description) => ({
+  description,
+  content: { "application/json": { schema: { type: "object", properties: { message: { type: "string" } } } } },
+});
+
 export const voicePaths = {
   "/api/voice/token": {
     get: {
@@ -18,8 +23,8 @@ export const voicePaths = {
             },
           },
         },
-        401: { description: "Unauthorized" },
-        500: { description: "Twilio credentials not configured" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Twilio credentials not configured."),
       },
     },
   },
@@ -43,9 +48,13 @@ export const voicePaths = {
         },
       },
       responses: {
-        200: { description: "Device bound successfully" },
-        400: { description: "phoneNumber is required" },
-        401: { description: "Unauthorized" },
+        200: {
+          description: "Device bound successfully",
+          content: { "application/json": { schema: { type: "object", properties: { success: { type: "boolean", example: true } } } } },
+        },
+        400: err("phoneNumber is required."),
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to bind device."),
       },
     },
   },
@@ -57,13 +66,10 @@ export const voicePaths = {
       responses: {
         200: {
           description: "Forwarding settings",
-          content: {
-            "application/json": {
-              schema: { $ref: "#/components/schemas/ForwardingSettings" },
-            },
-          },
+          content: { "application/json": { schema: { $ref: "#/components/schemas/ForwardingSettings" } } },
         },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to fetch forwarding settings."),
       },
     },
     put: {
@@ -79,7 +85,8 @@ export const voicePaths = {
       },
       responses: {
         200: { description: "Forwarding settings updated" },
-        401: { description: "Unauthorized" },
+        401: err("Unauthorized: Missing or invalid token"),
+        500: err("Failed to update forwarding settings."),
       },
     },
   },
@@ -92,8 +99,29 @@ export const voicePaths = {
         { name: "callSid", in: "path", required: true, schema: { type: "string" } },
       ],
       responses: {
-        200: { description: "AMD state" },
-        401: { description: "Unauthorized" },
+        200: {
+          description: "AMD state",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean" },
+                  data: {
+                    nullable: true,
+                    type: "object",
+                    properties: {
+                      childCallSid: { type: "string" },
+                      humanConnected: { type: "boolean" },
+                      timestamp: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        401: err("Unauthorized: Missing or invalid token"),
       },
     },
   },

@@ -7,6 +7,7 @@ import { voicePaths } from "./paths/voice.js";
 import { phoneNumberPaths } from "./paths/phoneNumber.js";
 import { callLogPaths } from "./paths/callLog.js";
 import { contactPaths } from "./paths/contact.js";
+import { webhookPaths } from "./paths/webhooks.js";
 
 export const openApiSpec = {
   openapi: "3.0.3",
@@ -40,6 +41,7 @@ export const openApiSpec = {
     { name: "Call Logs", description: "Call history and recordings" },
     { name: "Contacts", description: "Contact management" },
     { name: "Health", description: "Server health check" },
+    { name: "Twilio Webhooks", description: "Endpoints called by Twilio — NOT for client use" },
   ],
   paths: {
     ...healthPaths,
@@ -50,5 +52,6 @@ export const openApiSpec = {
     ...voicePaths,
     ...callLogPaths,
     ...contactPaths,
+    ...webhookPaths,
   },
 };
