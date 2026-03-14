@@ -3,11 +3,14 @@ import { healthPaths } from "./paths/health.js";
 import { authPaths } from "./paths/auth.js";
 import { businessPaths } from "./paths/business.js";
 import { profilePaths } from "./paths/profile.js";
-import { voicePaths } from "./paths/voice.js";
-import { phoneNumberPaths } from "./paths/phoneNumber.js";
-import { callLogPaths } from "./paths/callLog.js";
+import { tokenPaths } from "./paths/voice/token.js";
+import { devicePaths } from "./paths/voice/device.js";
+import { numbersPaths } from "./paths/voice/numbers.js";
+import { forwardingPaths } from "./paths/voice/forwarding.js";
+import { callsPaths } from "./paths/voice/calls.js";
+import { recordingsPaths } from "./paths/voice/recordings.js";
+import { webhooksPaths } from "./paths/voice/webhooks.js";
 import { contactPaths } from "./paths/contact.js";
-import { webhookPaths } from "./paths/webhooks.js";
 
 export const openApiSpec = {
   openapi: "3.0.3",
@@ -48,10 +51,15 @@ export const openApiSpec = {
     ...authPaths,
     ...businessPaths,
     ...profilePaths,
-    ...phoneNumberPaths,
-    ...voicePaths,
-    ...callLogPaths,
+    ...numbersPaths,
+
+    ...tokenPaths,
+    ...devicePaths,
+    ...forwardingPaths,
+    ...callsPaths,
+    ...recordingsPaths,
+    ...webhooksPaths,
+
     ...contactPaths,
-    ...webhookPaths,
   },
 };

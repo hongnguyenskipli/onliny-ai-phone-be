@@ -5,7 +5,7 @@ const twimlResponse = {
 
 const noContent = { description: "No content — Twilio does not require a body" };
 
-export const webhookPaths = {
+export const webhooksPaths = {
   "/api/voice/incoming": {
     post: {
       tags: ["Twilio Webhooks"],

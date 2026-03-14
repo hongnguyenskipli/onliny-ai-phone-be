@@ -8,10 +8,10 @@ const unauthorized = {
   content: { "application/json": { schema: { $ref: "#/components/schemas/UnauthorizedError" } } },
 };
 
-export const phoneNumberPaths = {
+export const numbersPaths = {
   "/api/voice/available-numbers": {
     get: {
-      tags: ["Phone Numbers"],
+      tags: ["Voice"],
       summary: "List available phone numbers to purchase",
       parameters: [
         {
@@ -52,7 +52,7 @@ export const phoneNumberPaths = {
 
   "/api/voice/my-number": {
     get: {
-      tags: ["Phone Numbers"],
+      tags: ["Voice"],
       summary: "Get the current user's purchased phone number",
       responses: {
         200: {
@@ -77,7 +77,7 @@ export const phoneNumberPaths = {
 
   "/api/voice/purchase-number": {
     post: {
-      tags: ["Phone Numbers"],
+      tags: ["Voice"],
       summary: "Purchase a phone number",
       requestBody: {
         required: true,
