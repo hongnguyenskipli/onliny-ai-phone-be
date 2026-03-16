@@ -11,8 +11,9 @@ const unauthorized = {
 export const devicePaths = {
   "/api/voice/calls/{callSid}/amd-state": {
     get: {
-      tags: ["Voice"],
+      tags: ["Voice/Device"],
       summary: "Get AMD (answering machine detection) state for a call",
+      description: "Returns AMD state tracked from Twilio Status Callbacks. See https://www.twilio.com/docs/voice/api/call-resource#statuscallbacks.",
       parameters: [
         { name: "callSid", in: "path", required: true, schema: { type: "string" } },
       ],
@@ -46,7 +47,7 @@ export const devicePaths = {
 
   "/api/voice/bind": {
     post: {
-      tags: ["Voice"],
+      tags: ["Voice/Device"],
       summary: "Bind a phone number to the current user device",
       requestBody: {
         required: true,

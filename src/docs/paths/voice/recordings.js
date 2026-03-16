@@ -11,8 +11,9 @@ const unauthorized = {
 export const recordingsPaths = {
   "/api/voice/calls/{callSid}/recordings": {
     get: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Recordings"],
       summary: "Get recordings for a call",
+      description: "Returns a list of call recordings. See https://www.twilio.com/docs/voice/api/recording-resource.",
       parameters: [
         { name: "callSid", in: "path", required: true, schema: { type: "string" } },
       ],
@@ -32,6 +33,7 @@ export const recordingsPaths = {
           },
         },
         401: unauthorized,
+        404: err("Call not found."),
         500: err("Failed to fetch recordings."),
       },
     },
@@ -39,8 +41,9 @@ export const recordingsPaths = {
 
   "/api/voice/calls/{callSid}/recordings/start": {
     post: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Recordings"],
       summary: "Start recording an active call",
+      description: "Starts a recording for an active call. See https://www.twilio.com/docs/voice/api/recording-resource.",
       parameters: [
         { name: "callSid", in: "path", required: true, schema: { type: "string" } },
       ],
@@ -60,6 +63,7 @@ export const recordingsPaths = {
           },
         },
         401: unauthorized,
+        404: err("Call not found."),
         500: err("Failed to start recording."),
       },
     },
@@ -67,7 +71,7 @@ export const recordingsPaths = {
 
   "/api/voice/recordings/{recordingSid}/stop": {
     post: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Recordings"],
       summary: "Stop an active recording",
       parameters: [
         { name: "recordingSid", in: "path", required: true, schema: { type: "string" } },
@@ -85,20 +89,23 @@ export const recordingsPaths = {
 
   "/api/voice/recordings/{recordingSid}/stream": {
     get: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Recordings"],
       summary: "Stream a recording audio file (MP3)",
+      description: "Requires a JWT token (query or Authorization header). Streams audio from Twilio recording resource.",
       parameters: [
         { name: "recordingSid", in: "path", required: true, schema: { type: "string" } },
         {
           name: "token",
           in: "query",
+          required: true,
           schema: { type: "string" },
-          description: "JWT token (alternative to Authorization header)",
+          description: "JWT token from /api/auth/verify-otp (can also be provided via Authorization: Bearer <token>)",
         },
       ],
       responses: {
         200: { description: "Audio stream (audio/mpeg)" },
         401: unauthorized,
+        404: err("Recording not found."),
         502: err("Failed to stream recording."),
       },
     },

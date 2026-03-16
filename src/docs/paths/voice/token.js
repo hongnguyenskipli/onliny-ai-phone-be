@@ -11,8 +11,9 @@ const unauthorized = {
 export const tokenPaths = {
   "/api/voice/token": {
     get: {
-      tags: ["Voice"],
+      tags: ["Voice/Token"],
       summary: "Get Twilio access token for voice calls",
+      description: "Generates a Twilio access token used by the client SDK. See https://www.twilio.com/docs/voice/sessions.",
       responses: {
         200: {
           description: "Access token",

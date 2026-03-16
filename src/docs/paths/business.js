@@ -24,16 +24,7 @@ export const businessPaths = {
                   success: { type: "boolean", example: true },
                   businesses: {
                     type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        id: { type: "string" },
-                        name: { type: "string" },
-                        ownerEmail: { type: "string", format: "email" },
-                        ownerUuid: { type: "string" },
-                        createdAt: { type: "string", format: "date-time", nullable: true },
-                      },
-                    },
+                    items: { $ref: "#/components/schemas/Business" },
                   },
                 },
               },
@@ -70,16 +61,7 @@ export const businessPaths = {
                 type: "object",
                 properties: {
                   success: { type: "boolean", example: true },
-                  business: {
-                    type: "object",
-                    properties: {
-                      id: { type: "string" },
-                      name: { type: "string" },
-                      ownerEmail: { type: "string", format: "email" },
-                      ownerUuid: { type: "string" },
-                      createdAt: { type: "string", format: "date-time", nullable: true },
-                    },
-                  },
+                  business: { $ref: "#/components/schemas/Business" },
                 },
               },
             },

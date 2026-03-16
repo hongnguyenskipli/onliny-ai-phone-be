@@ -8,6 +8,16 @@ router.get("/calls", verifyToken, async (req, res) => {
   const { limit = 50, status, search } = req.query;
   const { uuid } = req.user;
 
+  const parsedLimit = parseInt(limit, 10);
+  if (!Number.isNaN(parsedLimit) && parsedLimit > 200) {
+    return res.status(400).json({ message: "Limit cannot exceed 200." });
+  }
+
+  const allowedStatuses = ["missed", "completed"];
+  if (status && !allowedStatuses.includes(status)) {
+    return res.status(400).json({ message: "Invalid status. Allowed values: missed, completed." });
+  }
+
   try {
     const userPhoneNumber = await getUserPhoneNumber(uuid);
     if (!userPhoneNumber) {
@@ -15,7 +25,7 @@ router.get("/calls", verifyToken, async (req, res) => {
     }
 
     const client = getTwilioClient();
-    const pageLimit = Math.min(parseInt(limit) || 50, 200);
+    const pageLimit = Math.min(Number.isNaN(parsedLimit) ? 50 : parsedLimit, 200);
     const cacheKey = `calls:${uuid}:${pageLimit}`;
     const FINAL_STATUSES = ["completed", "no-answer", "busy", "canceled", "failed"];
 

@@ -11,8 +11,9 @@ const unauthorized = {
 export const callsPaths = {
   "/api/voice/calls": {
     get: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Calls"],
       summary: "Get call history",
+      description: "Returns call history for the current user. Uses Twilio Call Resource. See https://www.twilio.com/docs/voice/api/call-resource.",
       parameters: [
         { name: "limit", in: "query", schema: { type: "integer", default: 50, maximum: 200 } },
         { name: "status", in: "query", schema: { type: "string", enum: ["missed", "completed"] } },
@@ -34,6 +35,7 @@ export const callsPaths = {
             },
           },
         },
+        400: err("Invalid query parameters (status/limit)."),
         401: unauthorized,
         500: err("Failed to fetch call logs."),
       },
@@ -42,7 +44,7 @@ export const callsPaths = {
 
   "/api/voice/calls/stats": {
     get: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Calls"],
       summary: "Get today's call statistics",
       responses: {
         200: {
@@ -67,8 +69,9 @@ export const callsPaths = {
 
   "/api/voice/calls/contact/{phoneNumber}": {
     get: {
-      tags: ["Call Logs"],
+      tags: ["Voice/Calls"],
       summary: "Get call thread with a specific contact",
+      description: "Returns call history between the current user and a contact. Based on Twilio Call Resource. See https://www.twilio.com/docs/voice/api/call-resource.",
       parameters: [
         { name: "phoneNumber", in: "path", required: true, schema: { type: "string", example: "+15551234567" } },
       ],

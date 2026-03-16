@@ -48,10 +48,25 @@ export const commonSchemas = {
     type: "object",
     properties: {
       id: { type: "string" },
+      ownerUuid: { type: "string" },
       name: { type: "string", example: "John Doe" },
-      phone: { type: "string", example: "+15551234567" },
+      phoneNumber: { type: "string", example: "+15551234567" },
       email: { type: "string", format: "email", example: "john@example.com" },
+      company: { type: "string", example: "Acme Corp" },
       notes: { type: "string", example: "VIP client" },
+      avatarColor: { type: "string", example: "#2B7FFF" },
+      createdAt: { type: "string", format: "date-time", nullable: true },
+      updatedAt: { type: "string", format: "date-time", nullable: true },
+    },
+  },
+  Business: {
+    type: "object",
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+      ownerEmail: { type: "string", format: "email" },
+      ownerUuid: { type: "string" },
+      createdAt: { type: "string", format: "date-time", nullable: true },
     },
   },
   CallLog: {

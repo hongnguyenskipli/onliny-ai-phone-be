@@ -11,8 +11,9 @@ const unauthorized = {
 export const numbersPaths = {
   "/api/voice/available-numbers": {
     get: {
-      tags: ["Voice"],
+      tags: ["Voice/Numbers"],
       summary: "List available phone numbers to purchase",
+      description: "Search available Twilio phone numbers. See https://www.twilio.com/docs/phone-numbers.",
       parameters: [
         {
           name: "type",
@@ -52,7 +53,7 @@ export const numbersPaths = {
 
   "/api/voice/my-number": {
     get: {
-      tags: ["Voice"],
+      tags: ["Voice/Numbers"],
       summary: "Get the current user's purchased phone number",
       responses: {
         200: {
@@ -77,8 +78,9 @@ export const numbersPaths = {
 
   "/api/voice/purchase-number": {
     post: {
-      tags: ["Voice"],
+      tags: ["Voice/Numbers"],
       summary: "Purchase a phone number",
+      description: "Purchase a Twilio phone number. See https://www.twilio.com/docs/phone-numbers.",
       requestBody: {
         required: true,
         content: {

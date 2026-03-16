@@ -25,7 +25,7 @@ export const contactPaths = {
                 type: "object",
                 properties: {
                   success: { type: "boolean", example: true },
-                  data: { type: "array", items: { $ref: "#/components/schemas/Contact" } },
+                  contacts: { type: "array", items: { $ref: "#/components/schemas/Contact" } },
                 },
               },
             },
@@ -60,7 +60,17 @@ export const contactPaths = {
       responses: {
         201: {
           description: "Contact created successfully",
-          content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } },
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  contact: { $ref: "#/components/schemas/Contact" },
+                },
+              },
+            },
+          },
         },
         400: err("Name is required. / Phone number is required."),
         401: unauthorized,
@@ -79,7 +89,17 @@ export const contactPaths = {
       responses: {
         200: {
           description: "Contact data",
-          content: { "application/json": { schema: { $ref: "#/components/schemas/Contact" } } },
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  contact: { $ref: "#/components/schemas/Contact" },
+                },
+              },
+            },
+          },
         },
         401: unauthorized,
         403: err("Forbidden."),
@@ -112,7 +132,20 @@ export const contactPaths = {
         },
       },
       responses: {
-        200: { description: "Contact updated successfully", content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } } },
+        200: {
+          description: "Contact updated successfully",
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  success: { type: "boolean", example: true },
+                  contact: { $ref: "#/components/schemas/Contact" },
+                },
+              },
+            },
+          },
+        },
         401: unauthorized,
         403: err("Forbidden."),
         404: err("Contact not found."),

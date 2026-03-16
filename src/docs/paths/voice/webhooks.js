@@ -8,9 +8,9 @@ const noContent = { description: "No content — Twilio does not require a body"
 export const webhooksPaths = {
   "/api/voice/incoming": {
     post: {
-      tags: ["Twilio Webhooks"],
+      tags: ["Voice/Webhooks"],
       summary: "Incoming call webhook (called by Twilio)",
-      description: "Twilio calls this endpoint when someone dials your purchased number. Returns TwiML to route the call to the registered client.",
+      description: "Twilio calls this endpoint when someone dials your purchased number. Returns TwiML to route the call to the registered client. See https://www.twilio.com/docs/voice/twiml.",
       security: [],
       requestBody: {
         description: "Twilio sends form-encoded data",
@@ -35,9 +35,9 @@ export const webhooksPaths = {
 
   "/api/voice/outgoing": {
     post: {
-      tags: ["Twilio Webhooks"],
+      tags: ["Voice/Webhooks"],
       summary: "Outgoing call webhook (called by Twilio TwiML App)",
-      description: "Twilio calls this endpoint to get TwiML instructions for outgoing calls placed via the SDK.",
+      description: "Twilio calls this endpoint to get TwiML instructions for outgoing calls placed via the SDK. See https://www.twilio.com/docs/voice/twiml.",
       security: [],
       requestBody: {
         content: {
@@ -61,9 +61,9 @@ export const webhooksPaths = {
 
   "/api/voice/recording-status": {
     post: {
-      tags: ["Twilio Webhooks"],
+      tags: ["Voice/Webhooks"],
       summary: "Recording status callback (called by Twilio)",
-      description: "Twilio calls this after a call recording is completed.",
+      description: "Twilio calls this after a call recording is completed. See https://www.twilio.com/docs/voice/api/call-resource#statuscallbacks.",
       security: [],
       responses: { 204: noContent },
     },
@@ -71,9 +71,9 @@ export const webhooksPaths = {
 
   "/api/voice/call-answered": {
     post: {
-      tags: ["Twilio Webhooks"],
+      tags: ["Voice/Webhooks"],
       summary: "Call answered status callback (called by Twilio)",
-      description: "Twilio calls this when the outgoing call is answered. Used for AMD (answering machine detection) tracking.",
+      description: "Twilio calls this when the outgoing call is answered. Used for AMD (answering machine detection) tracking. See https://www.twilio.com/docs/voice/api/call-resource#statuscallbacks.",
       security: [],
       parameters: [
         { name: "parentSid", in: "query", schema: { type: "string" }, description: "Parent call SID" },
@@ -97,9 +97,9 @@ export const webhooksPaths = {
 
   "/api/voice/amd-status": {
     post: {
-      tags: ["Twilio Webhooks"],
+      tags: ["Voice/Webhooks"],
       summary: "AMD status callback (called by Twilio)",
-      description: "Twilio calls this with answering machine detection results.",
+      description: "Twilio calls this with answering machine detection results. See https://www.twilio.com/docs/voice/api/call-resource#statuscallbacks.",
       security: [],
       responses: { 204: noContent },
     },

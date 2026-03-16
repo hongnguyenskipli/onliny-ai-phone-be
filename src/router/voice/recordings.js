@@ -10,10 +10,14 @@ router.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
   try {
     const client = getTwilioClient();
 
-    const [directRecordings, callDetails] = await Promise.all([
-      client.calls(callSid).recordings.list().catch(() => []),
-      client.calls(callSid).fetch().catch(() => null),
-    ]);
+    let callDetails;
+    try {
+      callDetails = await client.calls(callSid).fetch();
+    } catch (err) {
+      return res.status(404).json({ success: false, message: "Call not found." });
+    }
+
+    const directRecordings = await client.calls(callSid).recordings.list().catch(() => []);
 
     let parentRecordings = [];
     if (callDetails?.parentCallSid) {
@@ -46,6 +50,13 @@ router.post("/calls/:callSid/recordings/start", verifyToken, async (req, res) =>
 
   try {
     const client = getTwilioClient();
+
+    try {
+      await client.calls(callSid).fetch();
+    } catch (err) {
+      return res.status(404).json({ success: false, message: "Call not found." });
+    }
+
     const recording = await client.calls(callSid).recordings.create({
       recordingChannels: "dual",
     });

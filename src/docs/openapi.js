@@ -21,7 +21,6 @@ export const openApiSpec = {
   },
   servers: [
     { url: "http://localhost:8080", description: "Local Development" },
-    { url: "https://639d-2402-800-6343-d54a-4c07-79f8-b3f7-6cc5.ngrok-free.app", description: "Ngrok Tunnel" },
   ],
   components: {
     securitySchemes: {
@@ -39,12 +38,15 @@ export const openApiSpec = {
     { name: "Auth", description: "Authentication endpoints" },
     { name: "Business", description: "Business management" },
     { name: "Profile", description: "User profile" },
-    { name: "Phone Numbers", description: "Buy and manage phone numbers" },
-    { name: "Voice", description: "Voice calls and tokens" },
-    { name: "Call Logs", description: "Call history and recordings" },
     { name: "Contacts", description: "Contact management" },
     { name: "Health", description: "Server health check" },
-    { name: "Twilio Webhooks", description: "Endpoints called by Twilio — NOT for client use" },
+    { name: "Voice/Numbers", description: "Purchase and manage Twilio phone numbers" },
+    { name: "Voice/Token", description: "Generate Twilio access tokens for voice" },
+    { name: "Voice/Device", description: "Bind a device and retrieve AMD state" },
+    { name: "Voice/Forwarding", description: "Call forwarding settings" },
+    { name: "Voice/Calls", description: "Call history and filtering" },
+    { name: "Voice/Recordings", description: "Call recording management" },
+    { name: "Voice/Webhooks", description: "Endpoints called by Twilio (not for client use)" },
   ],
   paths: {
     ...healthPaths,

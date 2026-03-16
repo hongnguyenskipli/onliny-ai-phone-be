@@ -11,7 +11,7 @@ const unauthorized = {
 export const forwardingPaths = {
   "/api/voice/forwarding": {
     get: {
-      tags: ["Voice"],
+      tags: ["Voice/Forwarding"],
       summary: "Get call forwarding settings",
       responses: {
         200: {
@@ -23,7 +23,7 @@ export const forwardingPaths = {
       },
     },
     put: {
-      tags: ["Voice"],
+      tags: ["Voice/Forwarding"],
       summary: "Update call forwarding settings",
       requestBody: {
         required: true,
