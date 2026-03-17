@@ -13,7 +13,7 @@ export const numbersPaths = {
     get: {
       tags: ["Voice/Numbers"],
       summary: "List available phone numbers to purchase",
-      description: "Search available Twilio phone numbers. See https://www.twilio.com/docs/phone-numbers.",
+      description: "Search available Twilio phone numbers. See https://www.twilio.com/docs/phone-numbers/api/availablephonenumber-resource.",
       parameters: [
         {
           name: "type",
@@ -80,7 +80,7 @@ export const numbersPaths = {
     post: {
       tags: ["Voice/Numbers"],
       summary: "Purchase a phone number",
-      description: "Purchase a Twilio phone number. See https://www.twilio.com/docs/phone-numbers.",
+      description: "Purchase a Twilio phone number. See https://www.twilio.com/docs/phone-numbers/api/availablephonenumber-resource.",
       requestBody: {
         required: true,
         content: {

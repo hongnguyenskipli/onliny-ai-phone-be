@@ -10,7 +10,7 @@ export const webhooksPaths = {
     post: {
       tags: ["Voice/Webhooks"],
       summary: "Incoming call webhook (called by Twilio)",
-      description: "Twilio calls this endpoint when someone dials your purchased number. Returns TwiML to route the call to the registered client. See https://www.twilio.com/docs/voice/twiml.",
+      description: "Twilio calls this endpoint when someone dials your purchased number. Returns TwiML to route the call to the registered client. See https://www.twilio.com/docs/voice/twiml/dial.",
       security: [],
       requestBody: {
         description: "Twilio sends form-encoded data",
