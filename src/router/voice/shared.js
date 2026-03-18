@@ -22,16 +22,21 @@ export const formatDuration = (seconds) => {
 
 export const isMissed = (status) => ["no-answer", "busy", "canceled", "failed"].includes(status);
 
-export const mapCall = (call) => ({
-  id: call.sid,
-  callerName: call.callerName || call.from,
-  callerNumber: call.direction === "inbound" ? call.from : call.to,
-  status: isMissed(call.status) ? "missed" : call.status,
-  startTime: call.startTime?.toISOString() || null,
-  duration: formatDuration(call.duration),
-  direction: call.direction === "inbound" ? "incoming" : "outgoing",
-  hasRecording: false,
-});
+export const mapCall = (call) => {
+  const isIncoming = call.direction === "inbound";
+  const otherNumber = isIncoming ? call.from : call.to;
+  const otherName = call.callerName || otherNumber;
+  return {
+    id: call.sid,
+    callerName: otherName,
+    callerNumber: otherNumber,
+    status: isMissed(call.status) ? "missed" : call.status,
+    startTime: call.startTime?.toISOString() || null,
+    duration: formatDuration(call.duration),
+    direction: isIncoming ? "incoming" : "outgoing",
+    hasRecording: false,
+  };
+};
 
 export const getUserPhoneNumber = async (uuid) => {
   if (!uuid) return null;

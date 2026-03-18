@@ -18,7 +18,6 @@ router.post("/incoming", async (req, res) => {
       const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
       if (doc.exists) {
         identity = doc.data().identity;
-        console.log(`[INCOMING WEBHOOK] Found identity in DB for ${to}: ${identity}`);
       } else {
         console.log(`[INCOMING WEBHOOK] No DB record for ${to}`);
       }
