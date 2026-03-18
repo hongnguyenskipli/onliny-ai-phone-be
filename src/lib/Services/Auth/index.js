@@ -24,12 +24,20 @@ export const sendOtpService = async ({ email, db = defaultDB }) => {
     createdAt: FieldValue.serverTimestamp(),
   });
 
-  await emailTransporter.sendMail({
-    from: AWS_SES_VERIFIED_EMAIL,
-    to: email,
-    subject: "Your Onliny AI Phone Verification Code",
-    html: OTP_EMAIL_TEMPLATE(otp),
-  });
+  try {
+    await Promise.race([
+      emailTransporter.sendMail({
+        from: AWS_SES_VERIFIED_EMAIL,
+        to: email,
+        subject: "Your Onliny AI Phone Verification Code",
+        html: OTP_EMAIL_TEMPLATE(otp),
+      }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout sending email to SES")), 3000))
+    ]);
+  } catch (err) {
+    console.log("Email sending failed or timed out:", err.message);
+  }
+
 
   return { success: true };
 };

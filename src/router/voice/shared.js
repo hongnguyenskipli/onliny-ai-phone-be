@@ -40,14 +40,11 @@ export const getUserPhoneNumber = async (uuid) => {
   return null;
 };
 
-export const getCallerIdByEmail = async (email) => {
+export const getCallerIdByIdentity = async (identity) => {
   try {
-    const snapshot = await defaultDB
-      .collection(USER_NUMBERS_COLLECTION)
-      .where("userEmail", "==", email)
-      .limit(1)
-      .get();
-    if (!snapshot.empty) return snapshot.docs[0].data().phone_number;
+    const uuid = identity.replace(/_/g, "-");
+    const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).get();
+    if (doc.exists) return doc.data().phone_number;
   } catch (_) {
     // ignore
   }

@@ -11,7 +11,7 @@ router.get("/", verifyToken, (req, res) => {
     return res.status(500).json({ message: "Twilio credentials not configured." });
   }
 
-  const identity = req.user.email;
+  const identity = req.user.uuid.replace(/-/g, "_");
   const token = new twilio.jwt.AccessToken(
     TWILIO_ACCOUNT_SID,
     TWILIO_API_KEY,

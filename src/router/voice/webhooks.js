@@ -2,7 +2,7 @@ import { Router } from "express";
 import twilio from "twilio";
 import { defaultDB } from "../../server/db.js";
 import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION } from "../../constants/index.js";
-import { getCallerIdByEmail, callAmdState } from "./shared.js";
+import { getCallerIdByIdentity, callAmdState } from "./shared.js";
 
 const router = Router();
 
@@ -18,6 +18,9 @@ router.post("/incoming", async (req, res) => {
       const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
       if (doc.exists) {
         identity = doc.data().identity;
+        console.log(`[INCOMING WEBHOOK] Found identity in DB for ${to}: ${identity}`);
+      } else {
+        console.log(`[INCOMING WEBHOOK] No DB record for ${to}`);
       }
     }
 
@@ -26,7 +29,7 @@ router.post("/incoming", async (req, res) => {
     }
 
     if (identity) {
-      const dial = twiml.dial({
+     const dial = twiml.dial({
         record: "record-from-answer-dual",
         recordingStatusCallback: `${baseUrl}/api/voice/recording-status`,
         recordingStatusCallbackMethod: "POST",
@@ -52,7 +55,7 @@ router.post("/outgoing", async (req, res) => {
 
   let callerId = process.env.TWILIO_PHONE_NUMBER;
   if (identity) {
-    callerId = await getCallerIdByEmail(identity);
+    callerId = await getCallerIdByIdentity(identity);
   }
 
   if (to) {

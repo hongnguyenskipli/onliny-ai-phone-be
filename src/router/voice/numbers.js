@@ -107,7 +107,7 @@ router.post("/purchase-number", verifyToken, async (req, res) => {
       defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).set(numberData),
       defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(purchased.phoneNumber).set({
         phoneNumber: purchased.phoneNumber,
-        identity: email,
+        identity: uuid.replace(/-/g, "_"),
         uuid,
         updatedAt: new Date().toISOString(),
       }),

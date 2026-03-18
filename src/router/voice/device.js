@@ -18,7 +18,7 @@ router.post("/bind", verifyToken, async (req, res) => {
     await defaultDB
       .collection(VOICE_BINDINGS_COLLECTION)
       .doc(phoneNumber)
-      .set({ phoneNumber, identity: email, uuid, updatedAt: new Date().toISOString() });
+      .set({ phoneNumber, identity: uuid.replace(/-/g, "_"), uuid, updatedAt: new Date().toISOString() });
 
     return res.json({ success: true });
   } catch (err) {
