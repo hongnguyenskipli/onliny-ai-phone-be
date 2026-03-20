@@ -6,6 +6,7 @@ import forwardingRouter from "./forwarding.js";
 import callsRouter from "./calls.js";
 import recordingsRouter from "./recordings.js";
 import webhooksRouter from "./webhooks.js";
+import smsRouter from "./sms.js";
 
 const VoiceRouter = Router();
 
@@ -16,5 +17,6 @@ VoiceRouter.use(forwardingRouter);
 VoiceRouter.use(callsRouter);
 VoiceRouter.use(recordingsRouter);
 VoiceRouter.use(webhooksRouter);
+VoiceRouter.use("/sms", smsRouter);
 
 export default VoiceRouter;

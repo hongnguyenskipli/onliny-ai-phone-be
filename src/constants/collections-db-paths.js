@@ -5,3 +5,5 @@ export const VOICE_BINDINGS_COLLECTION = "voice_bindings";
 export const USER_NUMBERS_COLLECTION = "user_phone_numbers";
 export const CALL_FORWARDING_COLLECTION = "call_forwarding";
 export const CONTACTS_COLLECTION = "contacts";
+export const MISSED_CALL_SMS_COLLECTION = "missed_call_sms";
+export const CALL_RESULTS_COLLECTION = "call_results";

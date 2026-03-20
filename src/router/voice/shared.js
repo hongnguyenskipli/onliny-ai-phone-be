@@ -2,7 +2,7 @@ import https from "https";
 import twilio from "twilio";
 import jwt from "jsonwebtoken";
 import { defaultDB } from "../../server/db.js";
-import { USER_NUMBERS_COLLECTION } from "../../constants/index.js";
+import { USER_NUMBERS_COLLECTION, MISSED_CALL_SMS_COLLECTION, CALL_RESULTS_COLLECTION } from "../../constants/index.js";
 
 const _twilioClient = { current: null };
 export const getTwilioClient = () => {
@@ -35,6 +35,7 @@ export const mapCall = (call) => {
     duration: formatDuration(call.duration),
     direction: isIncoming ? "incoming" : "outgoing",
     hasRecording: false,
+    smsSent: isSmsSentForCall(call.sid),
   };
 };
 
@@ -88,6 +89,79 @@ export const verifyJwtToken = (token) => {
   } catch (err) {
     return { valid: false, error: err.name };
   }
+};
+
+export const sendSMS = async (to, body, from) => {
+  const client = getTwilioClient();
+  const fromNumber = from || process.env.TWILIO_PHONE_NUMBER;
+  return client.messages.create({
+    to,
+    from: fromNumber,
+    body,
+  });
+};
+
+const _smsSentByCallSid = new Map();
+
+export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, smsSid) => {
+  _smsSentByCallSid.set(callSid, true);
+  try {
+    await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).set({
+      callSid,
+      callerNumber,
+      calledNumber,
+      smsSid,
+      sentAt: new Date().toISOString(),
+      status: "sent",
+    });
+  } catch (err) {
+    console.error("[SMS] Failed to save to Firebase:", err.message);
+  }
+};
+
+const _missedCallSids = new Map();
+
+export const markCallMissed = async (callSid) => {
+  _missedCallSids.set(callSid, true);
+  try {
+    await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).set({
+      callSid,
+      missed: true,
+      recordedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("[CALL_RESULTS] Failed to save to Firebase:", err.message);
+  }
+};
+
+export const isCallMissed = async (callSid) => {
+  if (_missedCallSids.has(callSid)) return true;
+  try {
+    const doc = await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).get();
+    if (doc.exists && doc.data().missed) {
+      _missedCallSids.set(callSid, true);
+      return true;
+    }
+  } catch (err) {
+    console.error("[CALL_RESULTS] Failed to check Firebase:", err.message);
+  }
+  return false;
+};
+
+export const isSmsSentForCall = async (callSid) => {
+  if (_smsSentByCallSid.has(callSid)) {
+    return true;
+  }
+  try {
+    const doc = await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).get();
+    if (doc.exists) {
+      _smsSentByCallSid.set(callSid, true);
+      return true;
+    }
+  } catch (err) {
+    console.error("[SMS] Failed to check Firebase:", err.message);
+  }
+  return false;
 };
 
 export const streamRecording = (recordingSid, authHeader, res) => {

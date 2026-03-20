@@ -1,8 +1,25 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
-import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet } from "./shared.js";
+import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet, isSmsSentForCall, isCallMissed } from "./shared.js";
 
 const router = Router();
+
+const enrichWithSmsStatus = async (calls) => {
+  const enriched = await Promise.all(
+    calls.map(async (c) => {
+      const [smsSent, callMissed] = await Promise.all([
+        isSmsSentForCall(c.id),
+        isCallMissed(c.id),
+      ]);
+      return {
+        ...c,
+        smsSent,
+        status: callMissed ? "missed" : c.status,
+      };
+    })
+  );
+  return enriched;
+};
 
 router.get("/calls", verifyToken, async (req, res) => {
   const { limit = 50, status, search } = req.query;
@@ -42,7 +59,7 @@ router.get("/calls", verifyToken, async (req, res) => {
       cacheSet(cacheKey, calls);
     }
 
-    let result = calls;
+    let result = await enrichWithSmsStatus(calls);
     if (status === "missed") {
       result = result.filter((c) => c.status === "missed");
     } else if (status === "completed") {
@@ -144,7 +161,7 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
       cacheSet(cacheKey, calls);
     }
 
-    return res.json({ success: true, calls });
+    return res.json({ success: true, calls: await enrichWithSmsStatus(calls) });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Failed to fetch contact call thread." });
   }

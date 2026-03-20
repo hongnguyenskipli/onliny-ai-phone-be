@@ -31,13 +31,15 @@ router.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
       return true;
     });
 
-    const mapped = allRecordings.map((r) => ({
-      sid: r.sid,
-      duration: parseInt(r.duration) || 0,
-      dateCreated: r.dateCreated?.toISOString() || null,
-      channels: r.channels,
-      source: r.source,
-    }));
+    const mapped = allRecordings
+      .filter((r) => (parseInt(r.duration) || 0) > 0)
+      .map((r) => ({
+        sid: r.sid,
+        duration: parseInt(r.duration) || 0,
+        dateCreated: r.dateCreated?.toISOString() || null,
+        channels: r.channels,
+        source: r.source,
+      }));
 
     return res.json({ success: true, recordings: mapped });
   } catch (err) {
