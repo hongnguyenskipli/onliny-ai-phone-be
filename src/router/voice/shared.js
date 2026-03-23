@@ -119,6 +119,29 @@ export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, sm
   }
 };
 
+const _callerMissedLog = [];
+const CALLER_MISSED_WINDOW_MS = 5 * 60 * 1000;
+
+export const markCallerMissed = (callerNumber) => {
+  if (!callerNumber) return;
+  _callerMissedLog.push({ callerNumber, timestamp: Date.now() });
+  const cutoff = Date.now() - CALLER_MISSED_WINDOW_MS;
+  while (_callerMissedLog.length > 0 && _callerMissedLog[0].timestamp < cutoff) {
+    _callerMissedLog.shift();
+  }
+};
+
+export const wasCallerMissed = (callerNumber, callStartTimeISO) => {
+  if (!callerNumber || !callStartTimeISO) return false;
+  const startTime = new Date(callStartTimeISO).getTime();
+  return _callerMissedLog.some(
+    (r) =>
+      r.callerNumber === callerNumber &&
+      r.timestamp >= startTime &&
+      r.timestamp - startTime < CALLER_MISSED_WINDOW_MS
+  );
+};
+
 const _missedCallSids = new Map();
 
 export const markCallMissed = async (callSid) => {

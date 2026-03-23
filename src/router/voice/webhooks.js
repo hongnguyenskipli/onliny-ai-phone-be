@@ -2,7 +2,7 @@ import { Router } from "express";
 import twilio from "twilio";
 import { defaultDB } from "../../server/db.js";
 import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION } from "../../constants/index.js";
-import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed } from "./shared.js";
+import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 
 const router = Router();
@@ -139,11 +139,11 @@ const _smsSentCache = new Map();
 const SMS_CACHE_TTL = 5 * 60 * 1000;
 
 const getMissedCallMessage = () => {
-  return `Hiện tại tôi bận không thể nghe cuộc gọi. Vui lòng gọi lại lúc mấy giờ vậy đó`;
+  return `Hi! This is Onliny.ai Customer Support. Sorry we missed your call — our team is currently assisting other customers. We'll get back to you as soon as possible. Thank you! `;
 };
 
 const getOutgoingMissedMessage = () => {
-  return `Hiện tại tôi bận không thể nghe cuộc gọi. Vui lòng gọi lại lúc mấy giờ vậy đó`;
+  return `Hi! This is Onliny.ai Customer Support. Sorry we missed your call — our team is currently assisting other customers. We'll get back to you as soon as possible. Thank you! `;
 };
 
 router.post("/call-status", async (req, res) => {
@@ -226,12 +226,17 @@ router.post("/calls/missed-sms", verifyToken, async (req, res) => {
   console.log(`[MISSED-SMS] callerNumber=${callerNumber} callSid=${callSid}`);
 
   try {
+    markCallerMissed(callerNumber);
     if (callSid) {
       await markCallMissed(callSid);
     }
 
     const message = await sendSMS(callerNumber, getMissedCallMessage());
     console.log(`[MISSED-SMS] Sent to ${callerNumber}, SID: ${message.sid}`);
+
+    if (callSid) {
+      await markSmsSentForCall(callSid, callerNumber, null, message.sid);
+    }
 
     return res.json({ success: true, sid: message.sid });
   } catch (err) {

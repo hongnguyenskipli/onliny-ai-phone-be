@@ -1,16 +1,19 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
-import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet, isSmsSentForCall, isCallMissed } from "./shared.js";
+import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet, isSmsSentForCall, isCallMissed, wasCallerMissed } from "./shared.js";
+import { defaultDB } from "../../server/db.js";
+import { MISSED_CALL_SMS_COLLECTION } from "../../constants/index.js";
 
 const router = Router();
 
 const enrichWithSmsStatus = async (calls) => {
   const enriched = await Promise.all(
     calls.map(async (c) => {
-      const [smsSent, callMissed] = await Promise.all([
+      const [smsSent, sidMissed] = await Promise.all([
         isSmsSentForCall(c.id),
         isCallMissed(c.id),
       ]);
+      const callMissed = sidMissed || wasCallerMissed(c.callerNumber, c.startTime);
       return {
         ...c,
         smsSent,
@@ -130,6 +133,37 @@ router.get("/calls/stats", verifyToken, async (req, res) => {
   }
 });
 
+const getAutoReplySidSet = async (phoneNumber) => {
+  try {
+    const [snapCaller, snapCalled] = await Promise.all([
+      defaultDB.collection(MISSED_CALL_SMS_COLLECTION).where("callerNumber", "==", phoneNumber).get(),
+      defaultDB.collection(MISSED_CALL_SMS_COLLECTION).where("calledNumber", "==", phoneNumber).get(),
+    ]);
+    const sidSet = new Set();
+    [snapCaller, snapCalled].forEach((snap) =>
+      snap.forEach((doc) => {
+        const { smsSid } = doc.data();
+        if (smsSid) sidSet.add(smsSid);
+      })
+    );
+    return sidSet;
+  } catch {
+    return new Set();
+  }
+};
+
+const mapSms = (msg, autoReplySids = new Set()) => ({
+  type: "sms",
+  id: msg.sid,
+  body: msg.body,
+  direction: msg.direction === "inbound" ? "incoming" : "outgoing",
+  startTime: msg.dateSent?.toISOString() || msg.dateCreated?.toISOString() || null,
+  status: msg.status,
+  from: msg.from,
+  to: msg.to,
+  isAutoReply: autoReplySids.has(msg.sid),
+});
+
 router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
   const { uuid } = req.user;
   const { phoneNumber } = req.params;
@@ -142,9 +176,10 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
 
     const client = getTwilioClient();
     const FINAL_STATUSES = ["completed", "no-answer", "busy", "canceled", "failed"];
-    const cacheKey = `thread:${uuid}:${phoneNumber}`;
+    const callCacheKey = `thread:${uuid}:${phoneNumber}`;
+    const smsCacheKey = `sms-thread:${uuid}:${phoneNumber}`;
 
-    let calls = cacheGet(cacheKey);
+    let calls = cacheGet(callCacheKey);
     if (!calls) {
       const [outbound, inbound] = await Promise.all([
         client.calls.list({ from: userPhoneNumber, to: phoneNumber, limit: 100 }).catch(() => []),
@@ -156,12 +191,34 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
         .sort((a, b) => a.startTime - b.startTime)
         .map((c) => ({
           ...mapCall(c),
+          type: "call",
           durationSeconds: parseInt(c.duration) || 0,
         }));
-      cacheSet(cacheKey, calls);
+      cacheSet(callCacheKey, calls);
     }
 
-    return res.json({ success: true, calls: await enrichWithSmsStatus(calls) });
+    let rawSmsMessages = cacheGet(smsCacheKey);
+    if (!rawSmsMessages) {
+      const [outboundSms, inboundSms] = await Promise.all([
+        client.messages.list({ from: userPhoneNumber, to: phoneNumber, limit: 100 }).catch(() => []),
+        client.messages.list({ from: phoneNumber, to: userPhoneNumber, limit: 100 }).catch(() => []),
+      ]);
+
+      rawSmsMessages = [...outboundSms, ...inboundSms].sort(
+        (a, b) => new Date(a.dateSent || a.dateCreated) - new Date(b.dateSent || b.dateCreated)
+      );
+      cacheSet(smsCacheKey, rawSmsMessages);
+    }
+
+    const autoReplySids = await getAutoReplySidSet(phoneNumber);
+    const smsMessages = rawSmsMessages.map((msg) => mapSms(msg, autoReplySids));
+
+    const enrichedCalls = (await enrichWithSmsStatus(calls)).map((c) => ({ ...c, type: "call" }));
+    const allItems = [...enrichedCalls, ...smsMessages].sort(
+      (a, b) => new Date(a.startTime) - new Date(b.startTime)
+    );
+
+    return res.json({ success: true, calls: allItems });
   } catch (err) {
     return res.status(500).json({ success: false, message: "Failed to fetch contact call thread." });
   }
