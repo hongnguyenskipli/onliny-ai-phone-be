@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
-import { sendSMS } from "./shared.js";
+import { sendSMS, cacheDelete, getUserPhoneNumber } from "./shared.js";
 
 const router = Router();
 
@@ -22,6 +22,8 @@ router.post("/send", verifyToken, async (req, res) => {
 
   try {
     const message = await sendSMS(to, body, from);
+    const { uuid } = req.user;
+    cacheDelete(`sms-thread:${uuid}:${to}`);
     return res.json({
       success: true,
       data: {

@@ -80,6 +80,7 @@ export const cacheGet = (key) => {
 };
 
 export const cacheSet = (key, data) => _cache.set(key, { data, ts: Date.now() });
+export const cacheDelete = (key) => _cache.delete(key);
 
 export const verifyJwtToken = (token) => {
   if (!token) return { valid: false, error: "missing" };
