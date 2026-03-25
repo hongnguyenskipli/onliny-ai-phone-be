@@ -116,12 +116,13 @@ router.post("/outgoing", async (req, res) => {
   return res.type("text/xml").send(twiml.toString());
 });
 
-router.post("/recording-status", (req, res) => {
+router.all("/recording-status", (req, res) => {
   res.sendStatus(204);
 });
 
-router.post("/call-answered", async (req, res) => {
-  const { CallStatus, CallSid } = req.body;
+router.all("/call-answered", async (req, res) => {
+  const params = { ...req.query, ...req.body };
+  const { CallStatus, CallSid } = params;
   const parentSid = req.query.parentSid;
 
   res.sendStatus(204);
@@ -142,15 +143,16 @@ const SMS_CACHE_TTL = 5 * 60 * 1000;
 
 const DEFAULT_MISSED_MSG = "Hi! Sorry we missed your call — we'll get back to you as soon as possible. Thank you!";
 
-router.post("/call-status", async (req, res) => {
+router.all("/call-status", async (req, res) => {
   res.sendStatus(204);
 });
 
-router.post("/dial-action", async (req, res) => {
+router.all("/dial-action", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
   res.type("text/xml").send(twiml.toString());
 
-  const { DialCallStatus, CallSid, Direction, From, To } = req.body;
+  const params = { ...req.query, ...req.body };
+  const { DialCallStatus, CallSid, Direction, From, To } = params;
   const myNumber = req.query.myNumber;
 
   console.log(`[DIAL-ACTION] Called: DialCallStatus=${DialCallStatus} Direction=${Direction} From=${From} To=${To} CallSid=${CallSid} myNumber=${myNumber}`);
