@@ -1,8 +1,8 @@
 import { Router } from "express";
 import twilio from "twilio";
 import { defaultDB } from "../../server/db.js";
-import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION } from "../../constants/index.js";
-import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed } from "./shared.js";
+import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION, CALL_RESULTS_COLLECTION } from "../../constants/index.js";
+import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed, isSmsSentForCall } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { getAutoReplyByPhoneNumber } from "../../lib/Services/AutoReply/index.js";
 import { sendPushToUser } from "../../lib/pushNotification.js";
@@ -116,8 +116,38 @@ router.post("/outgoing", async (req, res) => {
   return res.type("text/xml").send(twiml.toString());
 });
 
-router.all("/recording-status", (req, res) => {
+router.all("/recording-status", async (req, res) => {
   res.sendStatus(204);
+
+  const params = { ...req.query, ...req.body };
+  const { RecordingSid, RecordingUrl, CallSid, RecordingStatus } = params;
+  console.log(`[RECORDING] CallSid=${CallSid} RecordingSid=${RecordingSid} Status=${RecordingStatus}`);
+
+  if (RecordingSid && CallSid && RecordingStatus === "completed") {
+    try {
+      await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(CallSid).set(
+        { callSid: CallSid, recordingSid: RecordingSid, recordingUrl: RecordingUrl, recordedAt: new Date().toISOString() },
+        { merge: true }
+      );
+      console.log(`[RECORDING] Saved recording ${RecordingSid} for call ${CallSid}`);
+    } catch (err) {
+      console.error("[RECORDING] Save failed:", err.message);
+    }
+
+    // Send push notification to the number owner
+    try {
+      const toNumber = params.To || params.to;
+      if (toNumber) {
+        const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(toNumber).get();
+        if (binding.exists) {
+          await sendPushToUser(binding.data().uuid, { type: "call_update", contactNumber: params.From || params.from || "" });
+          console.log(`[RECORDING] Push sent for recording completion`);
+        }
+      }
+    } catch (err) {
+      console.error("[RECORDING] Push failed:", err.message);
+    }
+  }
 });
 
 router.all("/call-answered", async (req, res) => {
@@ -157,14 +187,33 @@ router.all("/dial-action", async (req, res) => {
 
   console.log(`[DIAL-ACTION] Called: DialCallStatus=${DialCallStatus} Direction=${Direction} From=${From} To=${To} CallSid=${CallSid} myNumber=${myNumber}`);
 
+  const isIncoming = Direction === "inbound";
+
   if (!isMissed(DialCallStatus)) {
     console.log(`[DIAL-ACTION] Not missed (status=${DialCallStatus}), skipping SMS`);
+
+    // For completed calls, send push notification to update frontend
+    if (DialCallStatus === "completed") {
+      try {
+        const ownerNumber = isIncoming ? To : myNumber;
+        if (ownerNumber) {
+          const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(ownerNumber).get();
+          if (binding.exists) {
+            const contactNum = isIncoming ? From : To;
+            await sendPushToUser(binding.data().uuid, { type: "call_update", contactNumber: contactNum });
+            console.log(`[DIAL-ACTION] Push sent for completed call`);
+          }
+        }
+      } catch (err) {
+        console.error("[DIAL-ACTION] Push error:", err.message);
+      }
+    }
     return;
   }
 
   await markCallMissed(CallSid);
 
-  const isIncoming = Direction === "inbound";
+  // isIncoming already computed above
 
   // Only send auto-reply for incoming missed calls
   if (!isIncoming) {
@@ -238,6 +287,15 @@ router.post("/calls/missed-sms", verifyToken, async (req, res) => {
   }
 
   console.log(`[MISSED-SMS] callerNumber=${callerNumber} callSid=${callSid}`);
+
+  // Check if SMS was already sent by dial-action webhook
+  if (callSid) {
+    const alreadySent = await isSmsSentForCall(callSid);
+    if (alreadySent) {
+      console.log(`[MISSED-SMS] Already sent by dial-action for ${callSid}, skipping`);
+      return res.json({ success: true, sid: "already-sent" });
+    }
+  }
 
   try {
     markCallerMissed(callerNumber);
