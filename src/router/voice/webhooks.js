@@ -5,6 +5,7 @@ import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION } from "../../consta
 import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { getAutoReplyByPhoneNumber } from "../../lib/Services/AutoReply/index.js";
+import { sendPushToUser } from "../../lib/pushNotification.js";
 
 const router = Router();
 
@@ -209,6 +210,15 @@ router.post("/dial-action", async (req, res) => {
     _smsSentCache.set(cacheKey, Date.now());
     _smsSentCache.set(recentKey, Date.now());
     await markSmsSentForCall(CallSid, From, To, smsSid);
+
+    // Send push notification to user
+    const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(To).get();
+    if (binding.exists) {
+      await sendPushToUser(binding.data().uuid, {
+        type: "call_update",
+        contactNumber: From,
+      });
+    }
   } catch (err) {
     console.error(`[SMS] Failed to send SMS:`, err.message);
   }

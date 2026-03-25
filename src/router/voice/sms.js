@@ -1,6 +1,9 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { sendSMS, cacheDelete, getUserPhoneNumber } from "./shared.js";
+import { sendPushToUser } from "../../lib/pushNotification.js";
+import { defaultDB } from "../../server/db.js";
+import { VOICE_BINDINGS_COLLECTION } from "../../constants/index.js";
 
 const router = Router();
 
@@ -42,7 +45,20 @@ router.post("/send", verifyToken, async (req, res) => {
 router.post("/incoming", async (req, res) => {
   const { From, Body, To } = req.body;
   console.log(`[SMS INCOMING] From: ${From}, To: ${To}, Body: ${Body}`);
-  return res.status(204).send();
+  res.status(204).send();
+
+  // Send push notification to the user who owns this number
+  try {
+    const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(To).get();
+    if (doc.exists) {
+      await sendPushToUser(doc.data().uuid, {
+        type: "sms_received",
+        contactNumber: From,
+      });
+    }
+  } catch (err) {
+    console.error("[SMS INCOMING] Push failed:", err.message);
+  }
 });
 
 router.get("/:messageSid/status", verifyToken, async (req, res) => {
