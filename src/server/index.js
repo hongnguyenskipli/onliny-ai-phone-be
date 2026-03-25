@@ -13,6 +13,7 @@ import BusinessRouter from "../router/business.js";
 import ProfileRouter from "../router/profile.js";
 import VoiceRouter from "../router/voice.js";
 import ContactRouter from "../router/contact.js";
+import AutoReplyRouter from "../router/auto-reply.js";
 import { defaultDB } from "./db.js";
 import { openApiSpec } from "../docs/openapi.js";
 
@@ -51,6 +52,7 @@ app.use("/api/business", BusinessRouter);
 app.use("/api/profile", ProfileRouter);
 app.use("/api/voice", VoiceRouter);
 app.use("/api/contacts", ContactRouter);
+app.use("/api/auto-reply", AutoReplyRouter);
 
 app.use((req, res) => {
   res.status(404).json({ status: 404, message: "Not Found" });

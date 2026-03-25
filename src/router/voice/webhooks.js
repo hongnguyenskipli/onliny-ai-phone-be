@@ -4,6 +4,7 @@ import { defaultDB } from "../../server/db.js";
 import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION } from "../../constants/index.js";
 import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
+import { getAutoReplyByPhoneNumber } from "../../lib/Services/AutoReply/index.js";
 
 const router = Router();
 
@@ -138,13 +139,7 @@ router.post("/call-answered", async (req, res) => {
 const _smsSentCache = new Map();
 const SMS_CACHE_TTL = 5 * 60 * 1000;
 
-const getMissedCallMessage = () => {
-  return `Hi! This is Onliny.ai Customer Support. Sorry we missed your call — our team is currently assisting other customers. We'll get back to you as soon as possible. Thank you! `;
-};
-
-const getOutgoingMissedMessage = () => {
-  return `Hi! This is Onliny.ai Customer Support. Sorry we missed your call — our team is currently assisting other customers. We'll get back to you as soon as possible. Thank you! `;
-};
+const DEFAULT_MISSED_MSG = "Hi! Sorry we missed your call — we'll get back to you as soon as possible. Thank you!";
 
 router.post("/call-status", async (req, res) => {
   res.sendStatus(204);
@@ -167,9 +162,16 @@ router.post("/dial-action", async (req, res) => {
   await markCallMissed(CallSid);
 
   const isIncoming = Direction === "inbound";
-  const smsTo = isIncoming ? From : myNumber;
 
-  console.log(`[DIAL-ACTION] Missed call. isIncoming=${isIncoming} smsTo=${smsTo}`);
+  // Only send auto-reply for incoming missed calls
+  if (!isIncoming) {
+    console.log(`[DIAL-ACTION] Outgoing missed call, skipping SMS`);
+    return;
+  }
+
+  const smsTo = From;
+
+  console.log(`[DIAL-ACTION] Missed call. smsTo=${smsTo}`);
 
   if (!smsTo || smsTo.startsWith("client:")) {
     console.log(`[DIAL-ACTION] Invalid smsTo="${smsTo}", aborting`);
@@ -190,19 +192,19 @@ router.post("/dial-action", async (req, res) => {
   }
 
   try {
-    let smsSid;
+    const autoReply = await getAutoReplyByPhoneNumber({ phoneNumber: To });
 
-    if (isIncoming) {
-      console.log(`[DIAL-ACTION] Sending SMS to caller ${smsTo}...`);
-      const message = await sendSMS(smsTo, getMissedCallMessage());
-      smsSid = message.sid;
-      console.log(`[SMS] Incoming missed → Sent to caller ${smsTo}, SID: ${smsSid}`);
-    } else {
-      console.log(`[DIAL-ACTION] Sending SMS to me ${smsTo}...`);
-      const message = await sendSMS(smsTo, getOutgoingMissedMessage());
-      smsSid = message.sid;
-      console.log(`[SMS] Outgoing missed → Sent to me ${smsTo}, SID: ${smsSid}`);
+    if (!autoReply || autoReply.enabled === false) {
+      console.log(`[DIAL-ACTION] Auto-reply disabled or not found for ${To}, skipping SMS`);
+      return;
     }
+
+    const smsBody = autoReply.missedCallMessage || DEFAULT_MISSED_MSG;
+
+    console.log(`[DIAL-ACTION] Sending SMS to ${smsTo}...`);
+    const message = await sendSMS(smsTo, smsBody);
+    const smsSid = message.sid;
+    console.log(`[SMS] Incoming missed → Sent to ${smsTo}, SID: ${smsSid}`);
 
     _smsSentCache.set(cacheKey, Date.now());
     _smsSentCache.set(recentKey, Date.now());
@@ -231,7 +233,14 @@ router.post("/calls/missed-sms", verifyToken, async (req, res) => {
       await markCallMissed(callSid);
     }
 
-    const message = await sendSMS(callerNumber, getMissedCallMessage());
+    // Look up user's auto-reply message
+    const { uuid } = req.user;
+    const { getUserPhoneNumber } = await import("./shared.js");
+    const userPhone = await getUserPhoneNumber(uuid);
+    const autoReply = userPhone ? await getAutoReplyByPhoneNumber({ phoneNumber: userPhone }) : null;
+    const smsBody = autoReply?.missedCallMessage || DEFAULT_MISSED_MSG;
+
+    const message = await sendSMS(callerNumber, smsBody);
     console.log(`[MISSED-SMS] Sent to ${callerNumber}, SID: ${message.sid}`);
 
     if (callSid) {
