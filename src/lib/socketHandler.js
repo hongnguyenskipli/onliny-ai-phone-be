@@ -1,15 +1,3 @@
-/**
- * socketHandler.js
- *
- * Socket.io server handler for Callr Backend.
- * Features:
- *  - JWT authentication on handshake
- *  - User room mapping (uuid → socket room)
- *  - emitToUser(uuid, event, data) — send to specific user
- *  - Message ACK support
- *  - Ping/Pong heartbeat (built-in socket.io)
- */
-
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 
@@ -18,11 +6,6 @@ const _userSockets = new Map();
 
 let _io = null;
 
-/**
- * Initialize Socket.io on the existing HTTP server.
- * @param {import("http").Server} httpServer
- * @returns {import("socket.io").Server}
- */
 export const initSocketIO = (httpServer) => {
   _io = new Server(httpServer, {
     cors: {
@@ -30,8 +13,8 @@ export const initSocketIO = (httpServer) => {
       methods: ["GET", "POST"],
     },
     // Ping/Pong heartbeat config
-    pingInterval: 25000,  // Send ping every 25s
-    pingTimeout: 10000,   // Wait 10s for pong before disconnect
+    pingInterval: 25000,
+    pingTimeout: 10000,
     transports: ["websocket", "polling"],
   });
 
@@ -74,8 +57,6 @@ export const initSocketIO = (httpServer) => {
     // ── Message ACK from client ───────────────────────────
     socket.on("message_ack", (data) => {
       console.log(`[Socket.io] ACK received from ${uuid}:`, data?.messageId);
-      // Server-side: mark message as delivered if needed
-      // For now, just acknowledge back
       socket.emit("message_ack_confirmed", {
         messageId: data?.messageId,
         status: "delivered",
@@ -85,9 +66,6 @@ export const initSocketIO = (httpServer) => {
     // ── Sync Data Request ─────────────────────────────────
     socket.on("sync_data", (data) => {
       console.log(`[Socket.io] Sync request from ${uuid}:`, data);
-      // Client reconnected and wants to catch up.
-      // In a full implementation, query missing messages since lastMessageId.
-      // For now, tell client to do a full refresh via API.
       socket.emit("sync_data_response", {
         action: "full_refresh",
         lastMessageId: data?.lastMessageId,
@@ -107,22 +85,13 @@ export const initSocketIO = (httpServer) => {
     });
   });
 
+
   console.log("[Socket.io] Server initialized");
   return _io;
 };
 
-/**
- * Get the Socket.io server instance.
- */
 export const getIO = () => _io;
 
-/**
- * Emit an event to a specific user (all their connected devices/tabs).
- * @param {string} uuid - User UUID
- * @param {string} event - Event name (e.g., 'new_message', 'call_status_changed')
- * @param {Object} data - Event payload
- * @returns {boolean} true if user has active socket connections
- */
 export const emitToUser = (uuid, event, data) => {
   if (!_io) {
     console.warn("[Socket.io] Server not initialized, cannot emit.");

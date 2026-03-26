@@ -1,22 +1,8 @@
-/**
- * pushNotification.js
- *
- * Dual-channel notification: Socket.io (real-time) + FCM (background fallback).
- * Strategy:
- *  - If user has active socket connection → emit via Socket.io (instant).
- *  - ALWAYS send FCM push as well (for background/killed state).
- *  - Frontend handles deduplication (message ID check) if both arrive.
- */
-
 import { getMessaging } from "firebase-admin/messaging";
 import { defaultDB } from "../server/db.js";
 import { emitToUser, isUserOnline } from "./socketHandler.js";
 
-/**
- * Send push notification to user via both Socket.io and FCM.
- * @param {string} uuid - User UUID
- * @param {Object} data - Payload (e.g., { type: 'sms_received', contactNumber: '+1...' })
- */
+
 export const sendPushToUser = async (uuid, data) => {
   // ── 1. Socket.io (instant, if user is online) ───────────────
   const socketEvent = mapDataTypeToSocketEvent(data.type);
