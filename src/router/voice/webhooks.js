@@ -2,7 +2,7 @@ import { Router } from "express";
 import twilio from "twilio";
 import { defaultDB } from "../../server/db.js";
 import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION, CALL_RESULTS_COLLECTION } from "../../constants/index.js";
-import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed, isSmsSentForCall } from "./shared.js";
+import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed, isSmsSentForCall, isCallRejected, markCallRejected } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { getAutoReplyByPhoneNumber } from "../../lib/Services/AutoReply/index.js";
 import { sendPushToUser } from "../../lib/pushNotification.js";
@@ -213,6 +213,21 @@ router.all("/dial-action", async (req, res) => {
 
   await markCallMissed(CallSid);
 
+  // Send push notification for missed call (whether or not auto-reply is sent)
+  try {
+    const ownerNumber = isIncoming ? To : myNumber;
+    if (ownerNumber) {
+      const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(ownerNumber).get();
+      if (binding.exists) {
+        const contactNum = isIncoming ? From : To;
+        await sendPushToUser(binding.data().uuid, { type: "call_update", contactNumber: contactNum });
+        console.log(`[DIAL-ACTION] Push sent for missed call`);
+      }
+    }
+  } catch (err) {
+    console.error("[DIAL-ACTION] Push error for missed call:", err.message);
+  }
+
   // isIncoming already computed above
 
   // Only send auto-reply for incoming missed calls
@@ -227,6 +242,18 @@ router.all("/dial-action", async (req, res) => {
 
   if (!smsTo || smsTo.startsWith("client:")) {
     console.log(`[DIAL-ACTION] Invalid smsTo="${smsTo}", aborting`);
+    return;
+  }
+
+  // Skip auto-reply if user explicitly rejected (denied) the call
+  if (isCallRejected(CallSid)) {
+    console.log(`[DIAL-ACTION] Call was rejected by user, skipping auto-reply SMS`);
+    return;
+  }
+
+  // Also check for DialCallStatus=busy which usually means user tapped Deny
+  if (DialCallStatus === "busy") {
+    console.log(`[DIAL-ACTION] DialCallStatus=busy (likely user denied), skipping auto-reply SMS`);
     return;
   }
 
@@ -322,6 +349,17 @@ router.post("/calls/missed-sms", verifyToken, async (req, res) => {
     console.error(`[MISSED-SMS] Failed:`, err.message);
     return res.status(500).json({ message: "Failed to send missed call SMS" });
   }
+});
+
+// Mark a call as rejected (user tapped Deny) — prevents auto-reply SMS
+router.post("/calls/mark-rejected", verifyToken, (req, res) => {
+  const { callSid } = req.body;
+  if (!callSid) {
+    return res.status(400).json({ message: "Missing callSid" });
+  }
+  markCallRejected(callSid);
+  console.log(`[REJECT] CallSid=${callSid} marked as rejected by user`);
+  return res.json({ success: true });
 });
 
 export default router;

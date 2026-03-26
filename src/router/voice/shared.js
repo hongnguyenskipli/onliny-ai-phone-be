@@ -120,6 +120,28 @@ export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, sm
   }
 };
 
+// ── Rejected Call Tracking (user explicitly denied) ──────────
+// When user taps "Deny", frontend calls markCallRejected() so
+// we skip auto-reply SMS for intentionally rejected calls.
+const _rejectedCallSids = new Set();
+
+export const markCallRejected = (callSid) => {
+  if (!callSid) return;
+  _rejectedCallSids.add(callSid);
+  // Auto-cleanup after 10 minutes
+  setTimeout(() => _rejectedCallSids.delete(callSid), 10 * 60 * 1000);
+};
+
+export const isCallRejected = (callSid) => {
+  return _rejectedCallSids.has(callSid);
+};
+
+// ── Missed Call Tracking (by CallSid, NOT callerNumber) ──────
+// OLD BUG: wasCallerMissed() tracked by callerNumber — if ONE call
+// from a number was missed, ALL calls from that number in 5min
+// showed as "missed" (including completed ones).
+// FIX: Track by callSid only. markCallerMissed is kept for
+// backward compat but no longer contaminates other calls.
 const _callerMissedLog = [];
 const CALLER_MISSED_WINDOW_MS = 5 * 60 * 1000;
 
@@ -132,15 +154,9 @@ export const markCallerMissed = (callerNumber) => {
   }
 };
 
+// DEPRECATED: No longer used in enrichWithSmsStatus. Kept for reference.
 export const wasCallerMissed = (callerNumber, callStartTimeISO) => {
-  if (!callerNumber || !callStartTimeISO) return false;
-  const startTime = new Date(callStartTimeISO).getTime();
-  return _callerMissedLog.some(
-    (r) =>
-      r.callerNumber === callerNumber &&
-      r.timestamp >= startTime &&
-      r.timestamp - startTime < CALLER_MISSED_WINDOW_MS
-  );
+  return false;
 };
 
 const _missedCallSids = new Map();
