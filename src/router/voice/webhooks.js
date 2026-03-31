@@ -9,108 +9,116 @@ import { sendPushToUser } from "../../lib/pushNotification.js";
 
 const router = Router();
 
-router.post("/incoming", async (req, res) => {
+router.post("/handler", async (req, res) => {
   const twiml = new twilio.twiml.VoiceResponse();
-  const to = req.body.To;
-  const from = req.body.From;
-  const baseUrl = process.env.SERVER_BASE_URL || `${req.protocol}://${req.get("host")}`;
-  const dialActionUrl = `${baseUrl}/api/voice/dial-action`;
+  const params = { ...req.query, ...req.body };
+  const direction = params.Direction;
+  const to = params.To;
+  const from = params.From;
+  
+ 
+  const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+  const host = req.get("host");
+  const baseUrl = process.env.SERVER_BASE_URL || `${protocol}://${host}`;
+  
+  const parentCallSid = params.CallSid;
 
-  console.log(`[INCOMING] From=${from} To=${to} baseUrl=${baseUrl} dialAction=${dialActionUrl}`);
+  console.log(`[VOICE_HANDLER] Incoming request: Direction=${direction}, To=${to}, From=${from}, BaseUrl=${baseUrl}`);
 
   try {
-    let identity = null;
+    const isClientOutbound = from && from.startsWith("client:");
 
-    if (to) {
-      const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
-      if (doc.exists) {
-        identity = doc.data().identity;
-      } else {
-        console.log(`[INCOMING] No DB record for ${to}, using fallback identity`);
+    if (direction === "outbound-api" || direction === "outbound-dial" || isClientOutbound) {
+      // Logic Outbound (Đã chạy tốt)
+      const identity = isClientOutbound ? from.slice(7) : null;
+      let callerId = process.env.TWILIO_PHONE_NUMBER;
+
+      if (identity) {
+        callerId = await getCallerIdByIdentity(identity);
       }
-    }
 
-    if (!identity) {
-      identity = process.env.TWILIO_CLIENT_IDENTITY;
-    }
+      if (to) {
+        console.log(`[OUTBOUND] Routing call from identity=${identity} to ${to} using callerId=${callerId}`);
 
-    console.log(`[INCOMING] Routing to identity=${identity}`);
+        const dialOptions = {
+          callerId,
+          record: "do-not-record",
+        };
 
-    if (identity) {
-      const dial = twiml.dial({
-        action: dialActionUrl,
-        method: "POST",
-        record: "record-from-answer-dual",
-        recordingStatusCallback: `${baseUrl}/api/voice/recording-status`,
-        recordingStatusCallbackMethod: "POST",
-      });
-      dial.client(identity);
-    } else {
-      twiml.say("No client registered to receive calls on this number.");
-    }
-  } catch (err) {
-    console.error(`[INCOMING] Error:`, err.message);
-    twiml.say("An error occurred routing your call.");
-  }
+        if (!to.startsWith("client:")) {
+          dialOptions.action = `${baseUrl}/api/voice/dial-action?myNumber=${encodeURIComponent(callerId)}`;
+          dialOptions.method = "POST";
+          dialOptions.record = "record-from-answer-dual";
+          dialOptions.recordingStatusCallback = `${baseUrl}/api/voice/recording-status`;
+          dialOptions.recordingStatusCallbackMethod = "POST";
 
-  return res.type("text/xml").send(twiml.toString());
-});
+          if (parentCallSid) {
+            callAmdState.set(parentCallSid, {
+              childCallSid: null,
+              humanConnected: false,
+              timestamp: Date.now(),
+            });
+          }
+        }
 
-router.post("/outgoing", async (req, res) => {
-  const twiml = new twilio.twiml.VoiceResponse();
-  const to = req.body.To;
-  const callerRaw = req.body.Caller || "";
-  const identity = callerRaw.startsWith("client:") ? callerRaw.slice(7) : null;
-  const baseUrl = process.env.SERVER_BASE_URL || `${req.protocol}://${req.get("host")}`;
-  const parentCallSid = req.body.CallSid;
+        const dial = twiml.dial(dialOptions);
+        if (to.startsWith("client:")) {
+          dial.client(to.replace("client:", ""));
+        } else {
+          dial.number(
+            {
+              statusCallbackEvent: "answered",
+              statusCallback: `${baseUrl}/api/voice/call-answered?parentSid=${parentCallSid}`,
+              statusCallbackMethod: "POST",
+            },
+            to
+          );
+        }
+      } else {
+        twiml.say("No destination provided.");
+      }
+    } else if (direction === "inbound") {
+      // Logic Inbound - Kiểm tra kỹ Identity
+      let identity = null;
+      const dialActionUrl = `${baseUrl}/api/voice/dial-action`;
 
-  try {
-    let callerId = process.env.TWILIO_PHONE_NUMBER;
-    if (identity) {
-      callerId = await getCallerIdByIdentity(identity);
-    }
-
-    if (to) {
-      const dialOptions = {
-        callerId,
-        record: "do-not-record",
-      };
-
-      if (!to.startsWith("client:")) {
-        dialOptions.action = `${baseUrl}/api/voice/dial-action?myNumber=${encodeURIComponent(callerId)}`;
-        dialOptions.method = "POST";
-        dialOptions.record = "record-from-answer-dual";
-        dialOptions.recordingStatusCallback = `${baseUrl}/api/voice/recording-status`;
-        dialOptions.recordingStatusCallbackMethod = "POST";
-
-        if (parentCallSid) {
-          callAmdState.set(parentCallSid, {
-            childCallSid: null,
-            humanConnected: false,
-            timestamp: Date.now(),
-          });
+      if (to) {
+        console.log(`[INBOUND] Looking up owner for number: ${to}`);
+        const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
+        if (doc.exists) {
+          identity = doc.data().identity;
+          console.log(`[INBOUND] Found identity: ${identity}`);
+        } else {
+          console.log(`[INBOUND] No DB record for ${to}, checking fallback identity`);
         }
       }
 
-      const dial = twiml.dial(dialOptions);
-      if (to.startsWith("client:")) {
-        dial.client(to.replace("client:", ""));
+      if (!identity) {
+        identity = process.env.TWILIO_CLIENT_IDENTITY;
+        console.log(`[INBOUND] Using process.env identity: ${identity}`);
+      }
+
+      if (identity) {
+        console.log(`[INBOUND] Dialing client: ${identity}`);
+        const dial = twiml.dial({
+          action: dialActionUrl,
+          method: "POST",
+          record: "record-from-answer-dual",
+          recordingStatusCallback: `${baseUrl}/api/voice/recording-status`,
+          recordingStatusCallbackMethod: "POST",
+        });
+        dial.client(identity);
       } else {
-        dial.number(
-          {
-            statusCallbackEvent: "answered",
-            statusCallback: `${baseUrl}/api/voice/call-answered?parentSid=${parentCallSid}`,
-            statusCallbackMethod: "POST",
-          },
-          to
-        );
+        console.error(`[INBOUND] Error: No identity found for ${to}`);
+        twiml.say("Sorry, the recipient is not available at this moment.");
       }
     } else {
-      twiml.say("No destination provided.");
+      console.log(`[VOICE_HANDLER] Unknown direction: ${direction}.`);
+      twiml.say("Unsupported call direction.");
     }
   } catch (err) {
-    console.error("[OUTGOING] Error building TwiML:", err.message);
-    twiml.say("An error occurred.");
+    console.error(`[VOICE_HANDLER] CRITICAL ERROR:`, err.stack);
+    twiml.say("An internal server error occurred.");
   }
 
   return res.type("text/xml").send(twiml.toString());
@@ -170,6 +178,13 @@ router.all("/call-answered", async (req, res) => {
 
 const _smsSentCache = new Map();
 const SMS_CACHE_TTL = 5 * 60 * 1000;
+
+setInterval(() => {
+  const cutoff = Date.now() - SMS_CACHE_TTL;
+  for (const [key, timestamp] of _smsSentCache.entries()) {
+    if (timestamp < cutoff) _smsSentCache.delete(key);
+  }
+}, 60 * 60 * 1000);
 
 const DEFAULT_MISSED_MSG = "Hi! Sorry we missed your call — we'll get back to you as soon as possible. Thank you!";
 
@@ -280,8 +295,9 @@ router.all("/dial-action", async (req, res) => {
 
     const smsBody = autoReply.missedCallMessage || DEFAULT_MISSED_MSG;
 
-    console.log(`[DIAL-ACTION] Sending SMS to ${smsTo}...`);
-    const message = await sendSMS(smsTo, smsBody);
+    // Send SMS from the dialed Twilio number to the caller
+    console.log(`[DIAL-ACTION] Sending auto-reply SMS to ${smsTo} from ${To}...`);
+    const message = await sendSMS(smsTo, smsBody, To);
     const smsSid = message.sid;
     console.log(`[SMS] Incoming missed → Sent to ${smsTo}, SID: ${smsSid}`);
 
@@ -337,8 +353,9 @@ router.post("/calls/missed-sms", verifyToken, async (req, res) => {
     const autoReply = userPhone ? await getAutoReplyByPhoneNumber({ phoneNumber: userPhone }) : null;
     const smsBody = autoReply?.missedCallMessage || DEFAULT_MISSED_MSG;
 
-    const message = await sendSMS(callerNumber, smsBody);
-    console.log(`[MISSED-SMS] Sent to ${callerNumber}, SID: ${message.sid}`);
+    // Send SMS from the user's Twilio number
+    const message = await sendSMS(callerNumber, smsBody, userPhone);
+    console.log(`[MISSED-SMS] Sent to ${callerNumber} from ${userPhone}, SID: ${message.sid}`);
 
     if (callSid) {
       await markSmsSentForCall(callSid, callerNumber, null, message.sid);

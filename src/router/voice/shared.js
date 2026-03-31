@@ -82,6 +82,28 @@ export const cacheGet = (key) => {
 export const cacheSet = (key, data) => _cache.set(key, { data, ts: Date.now() });
 export const cacheDelete = (key) => _cache.delete(key);
 
+// Global Auto-Cleanup for Memory Leak Prevention (Every 1 hour)
+setInterval(() => {
+  const cutoff2Hours = Date.now() - 2 * 60 * 60 * 1000;
+  
+  // Clean _smsSentByCallSid
+  for (const [sid, timestamp] of _smsSentByCallSid.entries()) {
+    if (timestamp < cutoff2Hours) _smsSentByCallSid.delete(sid);
+  }
+  
+  // Clean _missedCallSids
+  for (const [sid, timestamp] of _missedCallSids.entries()) {
+    if (timestamp < cutoff2Hours) _missedCallSids.delete(sid);
+  }
+
+  // Clean _cache
+  for (const [key, entry] of _cache.entries()) {
+    if (Date.now() - entry.ts > CACHE_TTL) {
+      _cache.delete(key);
+    }
+  }
+}, 60 * 60 * 1000);
+
 export const verifyJwtToken = (token) => {
   if (!token) return { valid: false, error: "missing" };
   try {
@@ -105,7 +127,7 @@ export const sendSMS = async (to, body, from) => {
 const _smsSentByCallSid = new Map();
 
 export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, smsSid) => {
-  _smsSentByCallSid.set(callSid, true);
+  _smsSentByCallSid.set(callSid, Date.now());
   try {
     await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).set({
       callSid,
@@ -162,7 +184,7 @@ export const wasCallerMissed = (callerNumber, callStartTimeISO) => {
 const _missedCallSids = new Map();
 
 export const markCallMissed = async (callSid) => {
-  _missedCallSids.set(callSid, true);
+  _missedCallSids.set(callSid, Date.now());
   try {
     await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).set({
       callSid,
@@ -179,7 +201,7 @@ export const isCallMissed = async (callSid) => {
   try {
     const doc = await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).get();
     if (doc.exists && doc.data().missed) {
-      _missedCallSids.set(callSid, true);
+      _missedCallSids.set(callSid, Date.now());
       return true;
     }
   } catch (err) {
@@ -195,7 +217,7 @@ export const isSmsSentForCall = async (callSid) => {
   try {
     const doc = await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).get();
     if (doc.exists) {
-      _smsSentByCallSid.set(callSid, true);
+      _smsSentByCallSid.set(callSid, Date.now());
       return true;
     }
   } catch (err) {

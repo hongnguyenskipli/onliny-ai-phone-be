@@ -24,8 +24,13 @@ router.post("/send", verifyToken, async (req, res) => {
   }
 
   try {
-    const message = await sendSMS(to, body, from);
     const { uuid } = req.user;
+    let fromNumber = from;
+    if (!fromNumber) {
+      fromNumber = await getUserPhoneNumber(uuid);
+    }
+    
+    const message = await sendSMS(to, body, fromNumber);
     cacheDelete(`sms-thread:${uuid}:${to}`);
     return res.json({
       success: true,
