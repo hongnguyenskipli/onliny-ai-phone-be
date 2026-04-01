@@ -1,27 +1,25 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
-import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet, isSmsSentForCall, isCallMissed, wasCallerMissed } from "./shared.js";
+import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet, cacheInvalidateByPrefix, isSmsSentForCall, isCallMissed, wasCallerMissed, batchCheckMissed, batchCheckSmsSent } from "./shared.js";
 import { defaultDB } from "../../server/db.js";
 import { MISSED_CALL_SMS_COLLECTION } from "../../constants/index.js";
 
 const router = Router();
 
 const enrichWithSmsStatus = async (calls) => {
-  const enriched = await Promise.all(
-    calls.map(async (c) => {
-      const [smsSent, sidMissed] = await Promise.all([
-        isSmsSentForCall(c.id),
-        isCallMissed(c.id),
-      ]);
-      const callMissed = sidMissed || wasCallerMissed(c.callerNumber, c.startTime);
-      return {
-        ...c,
-        smsSent,
-        status: callMissed ? "missed" : c.status,
-      };
-    })
-  );
-  return enriched;
+  if (!calls.length) return calls;
+
+  const sids = calls.map(c => c.id);
+  const [missedSet, smsSentSet] = await Promise.all([
+    batchCheckMissed(sids),
+    batchCheckSmsSent(sids),
+  ]);
+
+  return calls.map(c => ({
+    ...c,
+    smsSent: smsSentSet.has(c.id),
+    status: missedSet.has(c.id) ? "missed" : c.status,
+  }));
 };
 
 router.get("/calls", verifyToken, async (req, res) => {

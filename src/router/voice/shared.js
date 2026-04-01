@@ -67,7 +67,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 const _cache = new Map();
-const CACHE_TTL = 60_000;
+const CACHE_TTL = 300_000; // 5 minutes — Twilio API is slow, cache aggressively
 
 export const cacheGet = (key) => {
   const entry = _cache.get(key);
@@ -81,6 +81,12 @@ export const cacheGet = (key) => {
 
 export const cacheSet = (key, data) => _cache.set(key, { data, ts: Date.now() });
 export const cacheDelete = (key) => _cache.delete(key);
+
+export const cacheInvalidateByPrefix = (prefix) => {
+  for (const key of _cache.keys()) {
+    if (key.startsWith(prefix)) _cache.delete(key);
+  }
+};
 
 // Global Auto-Cleanup for Memory Leak Prevention (Every 1 hour)
 setInterval(() => {
@@ -224,6 +230,82 @@ export const isSmsSentForCall = async (callSid) => {
     console.error("[SMS] Failed to check Firebase:", err.message);
   }
   return false;
+};
+
+// ── Batch helpers: Fetch missed/sms status for many callSids in bulk ──
+// Firestore getAll() supports up to 500 docs per call
+const chunkArray = (arr, size) => {
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+};
+
+export const batchCheckMissed = async (callSids) => {
+  const result = new Set();
+  const toQuery = [];
+
+  for (const sid of callSids) {
+    if (_missedCallSids.has(sid)) {
+      result.add(sid);
+    } else {
+      toQuery.push(sid);
+    }
+  }
+
+  if (toQuery.length > 0) {
+    const chunks = chunkArray(toQuery, 100);
+    for (const chunk of chunks) {
+      try {
+        const refs = chunk.map(sid => defaultDB.collection(CALL_RESULTS_COLLECTION).doc(sid));
+        const docs = await defaultDB.getAll(...refs);
+        docs.forEach((doc) => {
+          if (doc.exists && doc.data().missed) {
+            result.add(doc.id);
+            _missedCallSids.set(doc.id, Date.now());
+          }
+        });
+      } catch (err) {
+        console.error("[CALL_RESULTS] Batch check failed:", err.message);
+      }
+    }
+  }
+
+  return result;
+};
+
+export const batchCheckSmsSent = async (callSids) => {
+  const result = new Set();
+  const toQuery = [];
+
+  for (const sid of callSids) {
+    if (_smsSentByCallSid.has(sid)) {
+      result.add(sid);
+    } else {
+      toQuery.push(sid);
+    }
+  }
+
+  if (toQuery.length > 0) {
+    const chunks = chunkArray(toQuery, 100);
+    for (const chunk of chunks) {
+      try {
+        const refs = chunk.map(sid => defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(sid));
+        const docs = await defaultDB.getAll(...refs);
+        docs.forEach((doc) => {
+          if (doc.exists) {
+            result.add(doc.id);
+            _smsSentByCallSid.set(doc.id, Date.now());
+          }
+        });
+      } catch (err) {
+        console.error("[SMS] Batch check failed:", err.message);
+      }
+    }
+  }
+
+  return result;
 };
 
 export const streamRecording = (recordingSid, authHeader, res) => {

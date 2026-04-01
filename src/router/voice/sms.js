@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
-import { sendSMS, cacheDelete, getUserPhoneNumber } from "./shared.js";
+import { sendSMS, cacheDelete, cacheInvalidateByPrefix, getUserPhoneNumber } from "./shared.js";
 import { sendPushToUser } from "../../lib/pushNotification.js";
+import { emitToUser } from "../../lib/socketHandler.js";
 import { defaultDB } from "../../server/db.js";
 import { VOICE_BINDINGS_COLLECTION } from "../../constants/index.js";
 
@@ -31,7 +32,21 @@ router.post("/send", verifyToken, async (req, res) => {
     }
     
     const message = await sendSMS(to, body, fromNumber);
+
+    // Invalidate all related caches for this user
     cacheDelete(`sms-thread:${uuid}:${to}`);
+    cacheInvalidateByPrefix(`calls:${uuid}`);
+    cacheInvalidateByPrefix(`thread:${uuid}`);
+
+    // Emit socket event immediately so frontend refreshes in real-time
+    emitToUser(uuid, "new_message", {
+      contactNumber: to,
+      direction: "outgoing",
+      body,
+      sid: message.sid,
+      source: "sms_sent",
+    });
+
     return res.json({
       success: true,
       data: {
