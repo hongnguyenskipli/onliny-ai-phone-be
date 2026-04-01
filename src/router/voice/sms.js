@@ -38,13 +38,14 @@ router.post("/send", verifyToken, async (req, res) => {
     cacheInvalidateByPrefix(`calls:${uuid}`);
     cacheInvalidateByPrefix(`thread:${uuid}`);
 
-    // Emit socket event immediately so frontend refreshes in real-time
+    // Emit socket event với đủ data để FE update UI trực tiếp (không cần HTTP refresh)
     emitToUser(uuid, "new_message", {
       contactNumber: to,
       direction: "outgoing",
       body,
       sid: message.sid,
       source: "sms_sent",
+      startTime: new Date().toISOString(),
     });
 
     return res.json({
