@@ -2,10 +2,11 @@ import { Router } from "express";
 import twilio from "twilio";
 import { defaultDB } from "../../server/db.js";
 import { VOICE_BINDINGS_COLLECTION, USER_NUMBERS_COLLECTION, CALL_RESULTS_COLLECTION } from "../../constants/index.js";
-import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed, isSmsSentForCall, isCallRejected, markCallRejected } from "./shared.js";
+import { getCallerIdByIdentity, callAmdState, isMissed, sendSMS, markSmsSentForCall, markCallMissed, markCallerMissed, isSmsSentForCall, isCallRejected, markCallRejected, cacheDelete, cacheInvalidateByPrefix } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { getAutoReplyByPhoneNumber } from "../../lib/Services/AutoReply/index.js";
 import { sendPushToUser } from "../../lib/pushNotification.js";
+import { emitToUser } from "../../lib/socketHandler.js";
 
 const router = Router();
 
@@ -214,9 +215,13 @@ router.all("/dial-action", async (req, res) => {
         if (ownerNumber) {
           const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(ownerNumber).get();
           if (binding.exists) {
+            const uuid = binding.data().uuid;
             const contactNum = isIncoming ? From : To;
-            await sendPushToUser(binding.data().uuid, { type: "call_update", contactNumber: contactNum });
-            console.log(`[DIAL-ACTION] Push sent for completed call`);
+            await sendPushToUser(uuid, { type: "call_update", contactNumber: contactNum });
+            emitToUser(uuid, "call_status_changed", { contactNumber: contactNum });
+            cacheInvalidateByPrefix(`calls:${uuid}`);
+            cacheInvalidateByPrefix(`thread:${uuid}`);
+            console.log(`[DIAL-ACTION] Push & Socket sent for completed call`);
           }
         }
       } catch (err) {
@@ -234,9 +239,13 @@ router.all("/dial-action", async (req, res) => {
     if (ownerNumber) {
       const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(ownerNumber).get();
       if (binding.exists) {
+        const uuid = binding.data().uuid;
         const contactNum = isIncoming ? From : To;
-        await sendPushToUser(binding.data().uuid, { type: "call_update", contactNumber: contactNum });
-        console.log(`[DIAL-ACTION] Push sent for missed call`);
+        await sendPushToUser(uuid, { type: "call_update", contactNumber: contactNum });
+        emitToUser(uuid, "call_status_changed", { contactNumber: contactNum });
+        cacheInvalidateByPrefix(`calls:${uuid}`);
+        cacheInvalidateByPrefix(`thread:${uuid}`);
+        console.log(`[DIAL-ACTION] Push & Socket sent for missed call`);
       }
     }
   } catch (err) {
@@ -308,9 +317,18 @@ router.all("/dial-action", async (req, res) => {
     // Send push notification to user
     const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(To).get();
     if (binding.exists) {
-      await sendPushToUser(binding.data().uuid, {
+      const uuid = binding.data().uuid;
+      cacheDelete(`sms-thread:${uuid}:${smsTo}`);
+      await sendPushToUser(uuid, {
         type: "call_update",
         contactNumber: From,
+      });
+      emitToUser(uuid, "new_message", {
+        contactNumber: smsTo,
+        direction: "outgoing",
+        body: smsBody,
+        sid: smsSid,
+        source: "auto_reply",
       });
     }
   } catch (err) {

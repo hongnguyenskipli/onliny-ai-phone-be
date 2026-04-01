@@ -63,7 +63,7 @@ router.post("/send", verifyToken, async (req, res) => {
 });
 
 router.post("/incoming", async (req, res) => {
-  const { From, Body, To } = req.body;
+  const { From, Body, To, MessageSid } = req.body;
   console.log(`[SMS INCOMING] From: ${From}, To: ${To}, Body: ${Body}`);
   res.status(204).send();
 
@@ -71,13 +71,27 @@ router.post("/incoming", async (req, res) => {
   try {
     const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(To).get();
     if (doc.exists) {
-      await sendPushToUser(doc.data().uuid, {
+      const uuid = doc.data().uuid;
+      
+      cacheDelete(`sms-thread:${uuid}:${From}`);
+      cacheInvalidateByPrefix(`calls:${uuid}`);
+      cacheInvalidateByPrefix(`thread:${uuid}`);
+      
+      await sendPushToUser(uuid, {
         type: "sms_received",
         contactNumber: From,
       });
+
+      emitToUser(uuid, "new_message", {
+        contactNumber: From,
+        direction: "incoming",
+        body: Body,
+        sid: MessageSid,
+        source: "sms_received",
+      });
     }
   } catch (err) {
-    console.error("[SMS INCOMING] Push failed:", err.message);
+    console.error("[SMS INCOMING] Push/Socket failed:", err.message);
   }
 });
 
