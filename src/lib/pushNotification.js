@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { sendSMS, isValidE164, getUserPhoneNumber } from "../router/voice/shared.js";
-import { chatService } from "../../lib/Services/Chat/chatService.js";
+import { chatService } from "./Services/Chat/chatService.js";
 import { verifyToken } from "../../middleware/auth.js";
 import crypto from "crypto";
 
