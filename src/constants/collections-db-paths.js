@@ -9,3 +9,4 @@ export const MISSED_CALL_SMS_COLLECTION = "missed_call_sms";
 export const CALL_RESULTS_COLLECTION = "call_results";
 export const AUTO_REPLY_COLLECTION = "auto_reply_settings";
 export const MESSAGES_COLLECTION = "messages";
+export const FCM_TOKENS_COLLECTION = "fcm_tokens";

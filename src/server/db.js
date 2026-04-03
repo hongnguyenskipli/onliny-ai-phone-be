@@ -3,6 +3,7 @@ dotenv.config();
 
 import { initializeApp, cert } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
+import { getMessaging } from "firebase-admin/messaging";
 
 const {
   FIREBASE_AUTH_URI,
@@ -37,3 +38,4 @@ initializeApp({
 });
 
 export const defaultDB = getFirestore();
+export const defaultMessaging = getMessaging();

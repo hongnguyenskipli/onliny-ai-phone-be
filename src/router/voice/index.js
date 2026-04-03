@@ -1,18 +1,18 @@
 import { Router } from "express";
-import tokenRouter from "./token.js"; // Deleted logically
-import deviceRouter from "./device.js"; // Deleted logically
+import tokenRouter from "./token.js"; 
+import deviceRouter from "./device.js"; 
 import numbersRouter from "./numbers.js";
 import forwardingRouter from "./forwarding.js";
 import callsRouter from "./calls.js";
 import recordingsRouter from "./recordings.js";
 import webhooksRouter from "./webhooks.js";
-import smsRouter from "./sms.js"; // Deleted logically
-import fcmRouter from "./fcm.js"; // Deleted logically
+import smsRouter from "./sms.js";
+import fcmRouter from "./fcm.js";
 
 const VoiceRouter = Router();
 
-// VoiceRouter.use("/token", tokenRouter);
-// VoiceRouter.use(deviceRouter);
+VoiceRouter.use("/token", tokenRouter);
+VoiceRouter.use(deviceRouter);
 VoiceRouter.use(numbersRouter);
 VoiceRouter.use(forwardingRouter);
 VoiceRouter.use(callsRouter);

@@ -3,7 +3,9 @@ import twilio from "twilio";
 import jwt from "jsonwebtoken";
 import { defaultDB } from "../../server/db.js";
 import {
-  USER_NUMBERS_COLLECTION
+  USER_NUMBERS_COLLECTION,
+  MISSED_CALL_SMS_COLLECTION,
+  MESSAGES_COLLECTION,
 } from "../../constants/index.js";
 
 /* ================= TWILIO ================= */
@@ -19,6 +21,21 @@ export const getTwilioClient = () => {
   }
   return _twilioClient;
 };
+
+/* ================= AMD & STATE ================= */
+
+export const callAmdState = new Map();
+
+// Cleanup AMD state periodically to prevent memory leaks
+const AMD_STATE_TTL = 3600000; // 1 hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of callAmdState.entries()) {
+    if (value.timestamp && now - value.timestamp > AMD_STATE_TTL) {
+      callAmdState.delete(key);
+    }
+  }
+}, 600000); // Clean every 10 minutes
 
 /* ================= UTIL ================= */
 
@@ -68,14 +85,22 @@ export const mapCall = (call, userPhoneNumber = null) => {
 
 export const getUserPhoneNumber = async (uuid) => {
   if (!uuid) return null;
-  const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).get();
-  return doc.exists ? doc.data().phone_number : null;
+  try {
+    const doc = await defaultDB
+      .collection(USER_NUMBERS_COLLECTION)
+      .doc(uuid)
+      .get();
+    return doc.exists ? doc.data().phone_number : null;
+  } catch (err) {
+    console.error(`Failed to get user phone number for ${uuid}:`, err);
+    return null;
+  }
 };
 
-/* ================= CACHE (Improved) ================= */
+/* ================= CACHE ================= */
 
 const _cache = new Map();
-const CACHE_TTL = 300_000;
+const CACHE_TTL = 300_000; // 5 minutes
 const MAX_CACHE_SIZE = 500;
 
 export const cacheGet = (key) => {
@@ -87,7 +112,7 @@ export const cacheGet = (key) => {
     return null;
   }
 
-  // refresh for LRU behavior
+  // Refresh for LRU behavior
   _cache.delete(key);
   _cache.set(key, entry);
 
@@ -110,7 +135,7 @@ export const cacheInvalidateByPrefix = (prefix) => {
   }
 };
 
-/* ================= SAFE CLEANUP ================= */
+/* ================= CACHE CLEANUP ================= */
 
 let _cleanupStarted = false;
 
@@ -118,6 +143,7 @@ export const startCacheCleanup = () => {
   if (_cleanupStarted) return;
   _cleanupStarted = true;
 
+  // Changed to 5 minutes to match TTL better
   setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of _cache.entries()) {
@@ -125,7 +151,7 @@ export const startCacheCleanup = () => {
         _cache.delete(key);
       }
     }
-  }, 60 * 60 * 1000);
+  }, 5 * 60 * 1000); // Every 5 minutes
 };
 
 /* ================= JWT ================= */
@@ -144,6 +170,12 @@ export const verifyJwtToken = (token) => {
 /* ================= STREAM ================= */
 
 export const streamRecording = (recordingSid, authHeader, res) => {
+  if (!recordingSid) {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ message: "Recording SID required" }));
+    return;
+  }
+
   const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}.mp3`;
 
   const auth = Buffer.from(
@@ -163,8 +195,12 @@ export const streamRecording = (recordingSid, authHeader, res) => {
       res.writeHead(twilioRes.statusCode || 200, {
         "Content-Type": twilioRes.headers["content-type"] || "audio/mpeg",
         "Accept-Ranges": "bytes",
-        "Content-Length": twilioRes.headers["content-length"],
-        "Content-Range": twilioRes.headers["content-range"],
+        ...(twilioRes.headers["content-length"] && {
+          "Content-Length": twilioRes.headers["content-length"],
+        }),
+        ...(twilioRes.headers["content-range"] && {
+          "Content-Range": twilioRes.headers["content-range"],
+        }),
       });
 
       twilioRes.pipe(res);
@@ -172,9 +208,11 @@ export const streamRecording = (recordingSid, authHeader, res) => {
   );
 
   req.on("timeout", () => req.destroy());
-  req.on("error", () => {
+  req.on("error", (err) => {
+    console.error("Stream recording error:", err);
     if (!res.headersSent) {
-      res.status(502).json({ message: "Stream failed" });
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ message: "Stream failed" }));
     }
   });
 
@@ -219,3 +257,87 @@ export const sendSMS = async (to, body, from, statusCallback = null) => {
     })
   );
 };
+
+/* ================= MISSED CALL HELPERS ================= */
+
+export const isCallMissed = (status) =>
+  ["no-answer", "busy", "canceled", "failed"].includes(status);
+
+export const isSmsSentForCall = async (callSid) => {
+  if (!callSid) return false;
+  try {
+    const doc = await defaultDB
+      .collection(MISSED_CALL_SMS_COLLECTION)
+      .doc(callSid)
+      .get();
+    return doc.exists;
+  } catch (err) {
+    console.error(`Error checking SMS status for call ${callSid}:`, err);
+    return false;
+  }
+};
+
+export const markSmsSentForCall = async (callSid) => {
+  if (!callSid) return;
+  try {
+    await defaultDB
+      .collection(MISSED_CALL_SMS_COLLECTION)
+      .doc(callSid)
+      .set({ sentAt: new Date().toISOString() });
+  } catch (err) {
+    console.error(`Error marking SMS sent for call ${callSid}:`, err);
+  }
+};
+
+export const getAutoReplySidSet = async (phoneNumber) => {
+  if (!phoneNumber) return new Set();
+  
+  try {
+    const snapshot = await defaultDB
+      .collection(MESSAGES_COLLECTION)
+      .where("to", "==", phoneNumber)
+      .where("type", "==", "auto_reply")
+      .get();
+    
+    return new Set(snapshot.docs.map(doc => doc.data().twilioSid));
+  } catch (err) {
+    console.error(`Error getting auto-reply SIDs for ${phoneNumber}:`, err);
+    return new Set();
+  }
+};
+
+export const enrichWithSmsStatus = async (calls) => {
+  if (!Array.isArray(calls)) return [];
+  
+  const enriched = await Promise.all(
+    calls.map(async (call) => ({
+      ...call,
+      smsSent: await isSmsSentForCall(call.id),
+    }))
+  );
+  return enriched;
+};
+
+export const batchCheckSmsSent = async (callSids) => {
+  if (!Array.isArray(callSids) || callSids.length === 0) return {};
+  
+  try {
+    const docs = await Promise.all(
+      callSids.map(sid => 
+        defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(sid).get()
+      )
+    );
+    
+    const result = {};
+    docs.forEach((doc, idx) => {
+      result[callSids[idx]] = doc.exists;
+    });
+    return result;
+  } catch (err) {
+    console.error("Error batch checking SMS sent:", err);
+    return {};
+  }
+};
+
+// Auto-start cache cleanup
+startCacheCleanup();
