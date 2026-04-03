@@ -19,4 +19,8 @@ AuthRouter.get("/me", verifyToken, (req, res) => {
   res.json({ success: true, uuid: req.user.uuid, email: req.user.email });
 });
 
+AuthRouter.post("/logout", verifyToken, (req, res) => {
+  AuthControllers.logout({ req, res, db: defaultDB });
+});
+
 export default AuthRouter;

@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { sendOtpService, verifyOtpService } from "../../Services/Auth/index.js";
 import { defaultDB } from "../../../server/db.js";
+import { FCM_TOKENS_COLLECTION } from "../../../constants/index.js";
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 //send otp to email and save in db with expiry time of 5 minutes
@@ -48,4 +49,18 @@ const verifyOtp = async ({ req, res, db = defaultDB }) => {
   }
 };
 
-export default { sendOtp, verifyOtp };
+const logout = async ({ req, res, db = defaultDB }) => {
+  try {
+    const { uuid } = req.user;
+
+    // Delete FCM token on logout
+    await db.collection(FCM_TOKENS_COLLECTION).doc(uuid).delete();
+
+    return res.status(200).json({ success: true, message: "Logged out successfully." });
+  } catch (error) {
+    console.error("logout error:", error);
+    return res.status(500).json({ message: "Failed to logout." });
+  }
+};
+
+export default { sendOtp, verifyOtp, logout };

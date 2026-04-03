@@ -48,7 +48,25 @@ export const sendPushToUser = async (uuid, data) => {
     console.log(`[Push] Sent to ${uuid}:`, response);
     return response;
   } catch (err) {
-    console.error(`[Push] Failed to send to ${uuid}:`, err.message);
+    const errorCode = err.code || "";
+    const errorMessage = err.message || "";
+    
+    // Check if token is invalid or not registered
+    const isInvalidToken = 
+      errorCode === "messaging/registration-token-not-registered" || 
+      errorCode === "messaging/invalid-registration-token" ||
+      errorMessage.includes("Requested entity was not found");
+
+    if (isInvalidToken) {
+      console.warn(`[Push] Invalid/Expired token for user ${uuid}. Removing from DB...`);
+      try {
+        await defaultDB.collection(FCM_TOKENS_COLLECTION).doc(uuid).delete();
+      } catch (dbErr) {
+        console.error(`[Push] Failed to delete stale token for ${uuid}:`, dbErr.message);
+      }
+    }
+
+    console.error(`[Push] Failed to send to ${uuid}:`, errorMessage);
     return null;
   }
 };
