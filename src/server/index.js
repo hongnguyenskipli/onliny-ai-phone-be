@@ -12,6 +12,7 @@ import AuthRouter from "../router/auth.js";
 import BusinessRouter from "../router/business.js";
 import ProfileRouter from "../router/profile.js";
 import VoiceRouter from "../router/voice.js";
+import FCMRouter from "../router/fcm.js";
 import ContactRouter from "../router/contact.js";
 import AutoReplyRouter from "../router/auto-reply.js";
 import { defaultDB } from "./db.js";
@@ -55,6 +56,7 @@ app.use("/api/auth", AuthRouter);
 app.use("/api/business", BusinessRouter);
 app.use("/api/profile", ProfileRouter);
 app.use("/api/voice", VoiceRouter);
+app.use("/api/fcm", FCMRouter);
 app.use("/api/contacts", ContactRouter);
 app.use("/api/auto-reply", AutoReplyRouter);
 
