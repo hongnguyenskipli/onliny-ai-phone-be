@@ -14,7 +14,7 @@ export const initSocketIO = (httpServer) => {
     },
     // Ping/Pong heartbeat config
     pingInterval: 25000,
-    pingTimeout: 10000,
+    pingTimeout: 60000, // 60s for mobile stability
     transports: ["websocket", "polling"],
   });
 
