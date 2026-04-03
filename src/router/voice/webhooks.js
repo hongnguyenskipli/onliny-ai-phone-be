@@ -41,12 +41,21 @@ router.post("/handler", async (req, res) => {
       if (to) {
         console.log(`[OUTBOUND] Routing call from identity=${identity} to ${to} using callerId=${callerId}`);
 
+        let targetIdentity = null;
+        if (!to.startsWith("client:")) {
+          const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
+          if (doc.exists) {
+            targetIdentity = doc.data().identity;
+            console.log(`[OUTBOUND] Intercepted in-app call target: ${targetIdentity}`);
+          }
+        }
+
         const dialOptions = {
           callerId,
           record: "do-not-record",
         };
 
-        if (!to.startsWith("client:")) {
+        if (!to.startsWith("client:") && !targetIdentity) {
           dialOptions.action = `${baseUrl}/api/voice/dial-action?myNumber=${encodeURIComponent(callerId)}`;
           dialOptions.method = "POST";
           dialOptions.record = "record-from-answer-dual";
@@ -60,10 +69,16 @@ router.post("/handler", async (req, res) => {
               timestamp: Date.now(),
             });
           }
+        } else if (targetIdentity || to.startsWith("client:")) {
+          // Keep dial-action for client-to-client for CDR logging
+          dialOptions.action = `${baseUrl}/api/voice/dial-action?myNumber=${encodeURIComponent(callerId)}`;
+          dialOptions.method = "POST";
         }
 
         const dial = twiml.dial(dialOptions);
-        if (to.startsWith("client:")) {
+        if (targetIdentity) {
+          dial.client(targetIdentity);
+        } else if (to.startsWith("client:")) {
           dial.client(to.replace("client:", ""));
         } else {
           dial.number(
@@ -104,6 +119,7 @@ router.post("/handler", async (req, res) => {
         const dial = twiml.dial({
           action: dialActionUrl,
           method: "POST",
+          timeout: 45,
           record: "record-from-answer-dual",
           recordingStatusCallback: `${baseUrl}/api/voice/recording-status`,
           recordingStatusCallbackMethod: "POST",

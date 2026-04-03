@@ -22,10 +22,20 @@ export const formatDuration = (seconds) => {
 
 export const isMissed = (status) => ["no-answer", "busy", "canceled", "failed"].includes(status);
 
-export const mapCall = (call) => {
-  const isIncoming = call.direction === "inbound";
-  const otherNumber = isIncoming ? call.from : call.to;
+export const mapCall = (call, userPhoneNumber = null) => {
+  let isIncoming;
+  if (userPhoneNumber) {
+    const cleanTo = call.to ? call.to.replace('client:', '') : '';
+    const cleanUser = userPhoneNumber.replace('client:', '');
+    isIncoming = cleanTo === cleanUser;
+  } else {
+    isIncoming = call.direction === "inbound";
+  }
+
+  const otherNumberRaw = isIncoming ? call.from : call.to;
+  const otherNumber = otherNumberRaw ? otherNumberRaw.replace('client:', '') : '';
   const otherName = call.callerName || otherNumber;
+
   return {
     id: call.sid,
     callerName: otherName,

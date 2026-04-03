@@ -56,7 +56,7 @@ router.get("/calls", verifyToken, async (req, res) => {
       calls = [...inbound, ...outbound]
         .filter((c) => FINAL_STATUSES.includes(c.status))
         .sort((a, b) => b.startTime - a.startTime)
-        .map(mapCall);
+        .map(c => mapCall(c, userPhoneNumber));
       cacheSet(cacheKey, calls);
     }
 
@@ -157,8 +157,8 @@ const mapSms = (msg, autoReplySids = new Set()) => ({
   direction: msg.direction === "inbound" ? "incoming" : "outgoing",
   startTime: msg.dateSent?.toISOString() || msg.dateCreated?.toISOString() || null,
   status: msg.status,
-  from: msg.from,
-  to: msg.to,
+  from: msg.from ? msg.from.replace('client:', '') : '',
+  to: msg.to ? msg.to.replace('client:', '') : '',
   isAutoReply: autoReplySids.has(msg.sid),
 });
 
@@ -188,7 +188,7 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
         .filter((c) => FINAL_STATUSES.includes(c.status))
         .sort((a, b) => a.startTime - b.startTime)
         .map((c) => ({
-          ...mapCall(c),
+          ...mapCall(c, userPhoneNumber),
           type: "call",
           durationSeconds: parseInt(c.duration) || 0,
         }));
