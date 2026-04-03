@@ -161,9 +161,6 @@ export const chatService = {
     }
 
     const normalizedNumber = this._normalizePhone(contactNumber);
-
-    // NOTE: Requires composite index on:
-    // conversationId (Ascending) + participants (Array) + createdAt (Descending)
     
     let query = defaultDB
       .collection(MESSAGES_COLLECTION)
