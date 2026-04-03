@@ -107,8 +107,8 @@ export const voiceService = {
     const baseData = {
       type: "INCOMING_CALL",
       callSid: callData.callSid,
-      from: callData.from,
-      to: callData.to,
+      senderNumber: callData.from,
+      recipientNumber: callData.to,
       callerName: callData.callerName || callData.from,
       timestamp: new Date().toISOString(),
     };

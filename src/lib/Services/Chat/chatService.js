@@ -204,7 +204,7 @@ export const chatService = {
       return await sendPushToUser(targetUuid, {
         type,
         conversationId: this._normalizePhone(conversationId),
-        from: fromNumber,
+        senderNumber: fromNumber,
       });
     } catch (error) {
       console.error('[Chat] triggerSignal error:', error);
