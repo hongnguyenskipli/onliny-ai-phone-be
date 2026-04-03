@@ -1,13 +1,13 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { defaultDB } from "../../server/db.js";
-import { VOICE_BINDINGS_COLLECTION } from "../../constants/index.js";
+import { VOICE_BINDINGS_COLLECTION, FCM_TOKENS_COLLECTION } from "../../constants/index.js";
 import { getTwilioClient, callAmdState } from "./shared.js";
 
 const router = Router();
 
 router.post("/bind", verifyToken, async (req, res) => {
-  const { phoneNumber } = req.body;
+  const { phoneNumber, fcmToken } = req.body;
   const { email, uuid } = req.user;
 
   if (!phoneNumber) {
@@ -15,13 +15,34 @@ router.post("/bind", verifyToken, async (req, res) => {
   }
 
   try {
-    await defaultDB
-      .collection(VOICE_BINDINGS_COLLECTION)
-      .doc(phoneNumber)
-      .set({ phoneNumber, identity: uuid.replace(/-/g, "_"), uuid, updatedAt: new Date().toISOString() });
+    const batch = defaultDB.batch();
 
-    return res.json({ success: true });
+    // 1. Save Voice Binding (Twilio Identity)
+    const bindingRef = defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(phoneNumber);
+    batch.set(bindingRef, {
+      phoneNumber,
+      identity: uuid.replace(/-/g, "_"),
+      uuid,
+      updatedAt: new Date().toISOString()
+    });
+
+    // 2. Save FCM Token if provided in the same request
+    if (fcmToken) {
+      console.log(`[FCM] Saving token via /bind for user ${uuid}`);
+      const fcmRef = defaultDB.collection(FCM_TOKENS_COLLECTION).doc(uuid);
+      batch.set(fcmRef, {
+        token: fcmToken,
+        uuid,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    await batch.commit();
+    console.log(`[Bind] Successfully bound ${phoneNumber} and processed FCM for user ${uuid}`);
+
+    return res.json({ success: true, fcmSaved: !!fcmToken });
   } catch (err) {
+    console.error(`[Bind] Failed for user ${uuid}:`, err.message);
     return res.status(500).json({ message: "Failed to bind device." });
   }
 });

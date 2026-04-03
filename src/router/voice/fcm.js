@@ -14,11 +14,13 @@ router.post("/fcm-token", verifyToken, async (req, res) => {
   }
 
   try {
+    console.log(`[FCM] Receiving token for user ${uuid}: ${fcmToken.substring(0, 10)}...`);
     await defaultDB.collection(FCM_TOKENS_COLLECTION).doc(uuid).set({
       token: fcmToken,
       uuid,
       updatedAt: new Date().toISOString(),
     });
+    console.log(`[FCM] Successfully saved token for user ${uuid}`);
     return res.json({ success: true });
   } catch (err) {
     console.error("[FCM] Failed to save token:", err.message);
