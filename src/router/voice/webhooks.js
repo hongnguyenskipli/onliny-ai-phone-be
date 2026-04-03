@@ -45,7 +45,7 @@ router.post("/handler", async (req, res) => {
         if (!to.startsWith("client:")) {
           const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
           if (doc.exists) {
-            targetIdentity = doc.data().identity;
+            targetIdentity = (doc.data().identity || "").replace(/-/g, "_");
             console.log(`[OUTBOUND] Intercepted in-app call target: ${targetIdentity}`);
           }
         }
@@ -102,7 +102,7 @@ router.post("/handler", async (req, res) => {
         console.log(`[INBOUND] Looking up owner for number: ${to}`);
         const doc = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(to).get();
         if (doc.exists) {
-          identity = doc.data().identity;
+          identity = (doc.data().identity || "").replace(/-/g, "_");
           console.log(`[INBOUND] Found identity: ${identity}`);
         } else {
           console.log(`[INBOUND] No DB record for ${to}, checking fallback identity`);
@@ -367,7 +367,7 @@ router.all("/dial-action", async (req, res) => {
       cacheDelete(`sms-thread:${uuid}:${smsTo}`);
       await sendPushToUser(uuid, {
         type: "call_update",
-        contactNumber: From,
+        contactNumber: smsTo,
       });
       emitToUser(uuid, "new_message", {
         contactNumber: smsTo,
