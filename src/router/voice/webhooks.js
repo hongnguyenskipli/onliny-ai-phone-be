@@ -165,7 +165,7 @@ router.all("/recording-status", async (req, res) => {
       if (toNumber) {
         const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(toNumber).get();
         if (binding.exists) {
-          await sendPushToUser(binding.data().uuid, { type: "call_update", contactNumber: params.From || params.from || "" });
+          await sendPushToUser(binding.data().uuid, { type: "CALL_UPDATE", state: "COMPLETED", contactNumber: params.From || params.from || "" });
           console.log(`[RECORDING] Push sent for recording completion`);
         }
       }
@@ -246,8 +246,7 @@ router.all("/dial-action", async (req, res) => {
           if (binding.exists) {
             const uuid = binding.data().uuid;
             const contactNum = isIncoming ? cleanFrom : cleanTo;
-            await sendPushToUser(uuid, { type: "call_update", contactNumber: contactNum });
-            emitToUser(uuid, "call_status_changed", { contactNumber: contactNum });
+            await sendPushToUser(uuid, { type: "CALL_UPDATE", state: "COMPLETED", contactNumber: contactNum });
             cacheInvalidateByPrefix(`calls:${uuid}`);
             cacheInvalidateByPrefix(`thread:${uuid}`);
             console.log(`[DIAL-ACTION] Push & Socket sent for completed call`);
@@ -281,8 +280,7 @@ router.all("/dial-action", async (req, res) => {
       if (binding.exists) {
         const uuid = binding.data().uuid;
         const contactNum = isIncoming ? cleanFrom : cleanTo;
-        await sendPushToUser(uuid, { type: "call_update", contactNumber: contactNum });
-        emitToUser(uuid, "call_status_changed", { contactNumber: contactNum });
+        await sendPushToUser(uuid, { type: "CALL_UPDATE", state: "MISSED", contactNumber: contactNum });
         cacheInvalidateByPrefix(`calls:${uuid}`);
         cacheInvalidateByPrefix(`thread:${uuid}`);
         console.log(`[DIAL-ACTION] Push & Socket sent for missed call`);
@@ -366,10 +364,12 @@ router.all("/dial-action", async (req, res) => {
       const uuid = binding.data().uuid;
       cacheDelete(`sms-thread:${uuid}:${smsTo}`);
       await sendPushToUser(uuid, {
-        type: "call_update",
+        type: "CALL_UPDATE",
+        state: "MISSED",
         contactNumber: smsTo,
       });
-      emitToUser(uuid, "new_message", {
+      await sendPushToUser(uuid, {
+        type: "MESSAGE_NEW",
         contactNumber: smsTo,
         direction: "outgoing",
         body: smsBody,

@@ -41,9 +41,9 @@ export const sendPushToUser = async (uuid, data) => {
  */
 const mapDataTypeToSocketEvent = (type) => {
   const mapping = {
-    call_update: "call_status_changed",
-    sms_received: "new_message",
-    dashboard_update: "dashboard_update",
+    CALL_UPDATE: "call_status_changed",
+    MESSAGE_NEW: "new_message",
+    DASHBOARD_UPDATE: "dashboard_update",
   };
   return mapping[type] || null;
 };

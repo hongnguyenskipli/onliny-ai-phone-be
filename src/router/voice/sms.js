@@ -79,11 +79,7 @@ router.post("/incoming", async (req, res) => {
       cacheInvalidateByPrefix(`thread:${uuid}`);
       
       await sendPushToUser(uuid, {
-        type: "sms_received",
-        contactNumber: From,
-      });
-
-      emitToUser(uuid, "new_message", {
+        type: "MESSAGE_NEW",
         contactNumber: From,
         direction: "incoming",
         body: Body,
