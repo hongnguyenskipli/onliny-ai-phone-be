@@ -228,9 +228,17 @@ router.all("/dial-action", async (req, res) => {
     // For completed calls, send push notification to update frontend
     if (DialCallStatus === "completed") {
       try {
-        const cleanTo = To ? To.replace('client:', '') : '';
-        const cleanFrom = From ? From.replace('client:', '') : '';
+        const rawTo = To || '';
+        const rawFrom = From || '';
+        
+        let cleanTo = rawTo.replace('client:', '');
+        let cleanFrom = rawFrom.replace('client:', '');
         const cleanMyNumber = myNumber ? myNumber.replace('client:', '') : '';
+
+        // If From is an identity and we have the caller's real number (myNumber), substitute it
+        if (rawFrom.startsWith('client:') && cleanMyNumber) {
+          cleanFrom = cleanMyNumber;
+        }
         
         const ownerNumber = isIncoming ? cleanTo : cleanMyNumber;
         if (ownerNumber) {
@@ -256,9 +264,16 @@ router.all("/dial-action", async (req, res) => {
 
   // Send push notification for missed call (whether or not auto-reply is sent)
   try {
-    const cleanTo = To ? To.replace('client:', '') : '';
-    const cleanFrom = From ? From.replace('client:', '') : '';
+    const rawTo = To || '';
+    const rawFrom = From || '';
+    
+    let cleanTo = rawTo.replace('client:', '');
+    let cleanFrom = rawFrom.replace('client:', '');
     const cleanMyNumber = myNumber ? myNumber.replace('client:', '') : '';
+
+    if (rawFrom.startsWith('client:') && cleanMyNumber) {
+      cleanFrom = cleanMyNumber;
+    }
 
     const ownerNumber = isIncoming ? cleanTo : cleanMyNumber;
     if (ownerNumber) {
@@ -285,7 +300,8 @@ router.all("/dial-action", async (req, res) => {
     return;
   }
 
-  const smsTo = From;
+  // Use cleanFrom because it has been substituted with myNumber (the real E164)
+  const smsTo = From && From.startsWith('client:') && myNumber ? myNumber.replace('client:', '') : (From ? From.replace('client:', '') : '');
 
   console.log(`[DIAL-ACTION] Missed call. smsTo=${smsTo}`);
 
