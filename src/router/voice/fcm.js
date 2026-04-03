@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
 import { defaultDB } from "../../server/db.js";
+import { FCM_TOKENS_COLLECTION } from "../../constants/index.js";
 
 const router = Router();
 
@@ -13,7 +14,7 @@ router.post("/fcm-token", verifyToken, async (req, res) => {
   }
 
   try {
-    await defaultDB.collection("fcm_tokens").doc(uuid).set({
+    await defaultDB.collection(FCM_TOKENS_COLLECTION).doc(uuid).set({
       token: fcmToken,
       uuid,
       updatedAt: new Date().toISOString(),

@@ -3,6 +3,8 @@ import { sendSMS, isValidE164, getUserPhoneNumber } from "../router/voice/shared
 import { chatService } from "./Services/Chat/chatService.js";
 import { verifyToken } from "../middleware/verifyToken.js";
 import crypto from "crypto";
+import { defaultDB } from "../server/db.js";
+import { MESSAGES_COLLECTION } from "../constants/index.js";
 
 const router = Router();
 
