@@ -197,10 +197,13 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
 
     let rawSmsMessages = cacheGet(smsCacheKey);
     if (!rawSmsMessages) {
-      const [outboundSms, inboundSms] = await Promise.all([
+      let [outboundSms, inboundSms] = await Promise.all([
         client.messages.list({ from: userPhoneNumber, to: phoneNumber, limit: 100 }).catch(() => []),
         client.messages.list({ from: phoneNumber, to: userPhoneNumber, limit: 100 }).catch(() => []),
       ]);
+
+      outboundSms = outboundSms.filter((msg) => !msg.direction.includes("inbound"));
+      inboundSms = inboundSms.filter((msg) => msg.direction.includes("inbound"));
 
       rawSmsMessages = [...outboundSms, ...inboundSms].sort(
         (a, b) => new Date(a.dateSent || a.dateCreated) - new Date(b.dateSent || b.dateCreated)

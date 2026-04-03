@@ -228,12 +228,16 @@ router.all("/dial-action", async (req, res) => {
     // For completed calls, send push notification to update frontend
     if (DialCallStatus === "completed") {
       try {
-        const ownerNumber = isIncoming ? To : myNumber;
+        const cleanTo = To ? To.replace('client:', '') : '';
+        const cleanFrom = From ? From.replace('client:', '') : '';
+        const cleanMyNumber = myNumber ? myNumber.replace('client:', '') : '';
+        
+        const ownerNumber = isIncoming ? cleanTo : cleanMyNumber;
         if (ownerNumber) {
           const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(ownerNumber).get();
           if (binding.exists) {
             const uuid = binding.data().uuid;
-            const contactNum = isIncoming ? From : To;
+            const contactNum = isIncoming ? cleanFrom : cleanTo;
             await sendPushToUser(uuid, { type: "call_update", contactNumber: contactNum });
             emitToUser(uuid, "call_status_changed", { contactNumber: contactNum });
             cacheInvalidateByPrefix(`calls:${uuid}`);
@@ -252,12 +256,16 @@ router.all("/dial-action", async (req, res) => {
 
   // Send push notification for missed call (whether or not auto-reply is sent)
   try {
-    const ownerNumber = isIncoming ? To : myNumber;
+    const cleanTo = To ? To.replace('client:', '') : '';
+    const cleanFrom = From ? From.replace('client:', '') : '';
+    const cleanMyNumber = myNumber ? myNumber.replace('client:', '') : '';
+
+    const ownerNumber = isIncoming ? cleanTo : cleanMyNumber;
     if (ownerNumber) {
       const binding = await defaultDB.collection(VOICE_BINDINGS_COLLECTION).doc(ownerNumber).get();
       if (binding.exists) {
         const uuid = binding.data().uuid;
-        const contactNum = isIncoming ? From : To;
+        const contactNum = isIncoming ? cleanFrom : cleanTo;
         await sendPushToUser(uuid, { type: "call_update", contactNumber: contactNum });
         emitToUser(uuid, "call_status_changed", { contactNumber: contactNum });
         cacheInvalidateByPrefix(`calls:${uuid}`);
