@@ -6,22 +6,6 @@ import { MISSED_CALL_SMS_COLLECTION } from "../../constants/index.js";
 
 const router = Router();
 
-const enrichWithSmsStatus = async (calls) => {
-  if (!calls.length) return calls;
-
-  const sids = calls.map(c => c.id);
-  const [missedSet, smsSentSet] = await Promise.all([
-    batchCheckMissed(sids),
-    batchCheckSmsSent(sids),
-  ]);
-
-  return calls.map(c => ({
-    ...c,
-    smsSent: smsSentSet.has(c.id),
-    status: missedSet.has(c.id) ? "missed" : c.status,
-  }));
-};
-
 router.get("/calls", verifyToken, async (req, res) => {
   const { limit = 50, status, search } = req.query;
   const { uuid } = req.user;
@@ -60,7 +44,7 @@ router.get("/calls", verifyToken, async (req, res) => {
       cacheSet(cacheKey, calls);
     }
 
-    let result = await enrichWithSmsStatus(calls);
+    let result = calls;
     if (status === "missed") {
       result = result.filter((c) => c.status === "missed");
     } else if (status === "completed") {
@@ -131,24 +115,8 @@ router.get("/calls/stats", verifyToken, async (req, res) => {
   }
 });
 
-const getAutoReplySidSet = async (phoneNumber) => {
-  try {
-    const [snapCaller, snapCalled] = await Promise.all([
-      defaultDB.collection(MISSED_CALL_SMS_COLLECTION).where("callerNumber", "==", phoneNumber).get(),
-      defaultDB.collection(MISSED_CALL_SMS_COLLECTION).where("calledNumber", "==", phoneNumber).get(),
-    ]);
-    const sidSet = new Set();
-    [snapCaller, snapCalled].forEach((snap) =>
-      snap.forEach((doc) => {
-        const { smsSid } = doc.data();
-        if (smsSid) sidSet.add(smsSid);
-      })
-    );
-    return sidSet;
-  } catch {
-    return new Set();
-  }
-};
+// Auto-reply and Missed SMS logic removed.
+// Original calls.js now only provides history and analytics.
 
 const mapSms = (msg, autoReplySids = new Set()) => ({
   type: "sms",

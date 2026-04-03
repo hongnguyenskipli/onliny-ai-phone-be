@@ -45,7 +45,7 @@ export const mapCall = (call, userPhoneNumber = null) => {
     duration: formatDuration(call.duration),
     direction: isIncoming ? "incoming" : "outgoing",
     hasRecording: false,
-    smsSent: isSmsSentForCall(call.sid),
+    smsSent: false, // Feature deleted
   };
 };
 
@@ -67,17 +67,10 @@ export const getCallerIdByIdentity = async (identity) => {
   return process.env.TWILIO_PHONE_NUMBER;
 };
 
-export const callAmdState = new Map();
-
-setInterval(() => {
-  const cutoff = Date.now() - 15 * 60 * 1000;
-  for (const [sid, state] of callAmdState.entries()) {
-    if (state.timestamp < cutoff) callAmdState.delete(sid);
-  }
-}, 5 * 60 * 1000);
+// AMD State and Communication tracking removed.
 
 const _cache = new Map();
-const CACHE_TTL = 300_000; // 5 minutes — Twilio API is slow, cache aggressively
+const CACHE_TTL = 300_000; // 5 minutes
 const MAX_CACHE_SIZE = 500;
 
 export const cacheGet = (key) => {
@@ -108,16 +101,6 @@ export const cacheInvalidateByPrefix = (prefix) => {
 // Global Auto-Cleanup for Memory Leak Prevention (Every 1 hour)
 setInterval(() => {
   const cutoff2Hours = Date.now() - 2 * 60 * 60 * 1000;
-  
-  // Clean _smsSentByCallSid
-  for (const [sid, timestamp] of _smsSentByCallSid.entries()) {
-    if (timestamp < cutoff2Hours) _smsSentByCallSid.delete(sid);
-  }
-  
-  // Clean _missedCallSids
-  for (const [sid, timestamp] of _missedCallSids.entries()) {
-    if (timestamp < cutoff2Hours) _missedCallSids.delete(sid);
-  }
 
   // Clean _cache
   for (const [key, entry] of _cache.entries()) {
@@ -135,228 +118,6 @@ export const verifyJwtToken = (token) => {
   } catch (err) {
     return { valid: false, error: err.name };
   }
-};
-
-export const sendSMS = async (to, body, from) => {
-  const client = getTwilioClient();
-  const fromNumber = from || process.env.TWILIO_PHONE_NUMBER;
-  return client.messages.create({
-    to,
-    from: fromNumber,
-    body,
-  });
-};
-
-const _smsSentByCallSid = new Map();
-const MAX_SMS_SID_MAP_SIZE = 500;
-
-export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, smsSid) => {
-  if (_smsSentByCallSid.size >= MAX_SMS_SID_MAP_SIZE) {
-    const oldestKey = _smsSentByCallSid.keys().next().value;
-    _smsSentByCallSid.delete(oldestKey);
-  }
-  _smsSentByCallSid.set(callSid, Date.now());
-  try {
-    await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).set({
-      callSid,
-      callerNumber,
-      calledNumber,
-      smsSid,
-      sentAt: new Date().toISOString(),
-      status: "sent",
-    });
-  } catch (err) {
-    console.error("[SMS] Failed to save to Firebase:", err.message);
-  }
-};
-
-// ── Rejected Call Tracking (user explicitly denied) ──────────
-// When user taps "Deny", frontend calls markCallRejected() so
-// we skip auto-reply SMS for intentionally rejected calls.
-// Persisted to Firestore to survive server restarts.
-const _rejectedCallSids = new Set();
-
-export const markCallRejected = async (callSid) => {
-  if (!callSid) return;
-  _rejectedCallSids.add(callSid);
-  let persisted = false;
-  try {
-    await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).set({
-      callSid,
-      rejected: true,
-      recordedAt: new Date().toISOString(),
-    }, { merge: true });
-    persisted = true;
-  } catch (err) {
-    console.error("[CALL_RESULTS] Failed to save rejected state:", err.message);
-  }
-  // Only cleanup from memory if persisted to Firestore.
-  // If persist failed, keep in-memory longer (30 min) as safety net.
-  const cleanupMs = persisted ? 10 * 60 * 1000 : 30 * 60 * 1000;
-  setTimeout(() => _rejectedCallSids.delete(callSid), cleanupMs);
-};
-
-export const isCallRejected = async (callSid) => {
-  if (_rejectedCallSids.has(callSid)) return true;
-  try {
-    const doc = await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).get();
-    if (doc.exists && doc.data().rejected) {
-      _rejectedCallSids.add(callSid);
-      return true;
-    }
-  } catch (err) {
-    console.error("[CALL_RESULTS] Failed to check rejected state:", err.message);
-  }
-  return false;
-};
-
-// ── Missed Call Tracking (by CallSid, NOT callerNumber) ──────
-// OLD BUG: wasCallerMissed() tracked by callerNumber — if ONE call
-// from a number was missed, ALL calls from that number in 5min
-// showed as "missed" (including completed ones).
-// FIX: Track by callSid only. markCallerMissed is kept for
-// backward compat but no longer contaminates other calls.
-const _callerMissedLog = [];
-const CALLER_MISSED_WINDOW_MS = 5 * 60 * 1000;
-const MAX_MISSED_LOG_SIZE = 500;
-
-export const markCallerMissed = (callerNumber) => {
-  if (!callerNumber) return;
-  // Evict oldest if exceeds max size before pushing
-  if (_callerMissedLog.length >= MAX_MISSED_LOG_SIZE) {
-    _callerMissedLog.splice(0, _callerMissedLog.length - MAX_MISSED_LOG_SIZE + 1);
-  }
-  _callerMissedLog.push({ callerNumber, timestamp: Date.now() });
-  const cutoff = Date.now() - CALLER_MISSED_WINDOW_MS;
-  while (_callerMissedLog.length > 0 && _callerMissedLog[0].timestamp < cutoff) {
-    _callerMissedLog.shift();
-  }
-};
-
-// DEPRECATED: No longer used in enrichWithSmsStatus. Kept for reference.
-export const wasCallerMissed = (callerNumber, callStartTimeISO) => {
-  return false;
-};
-
-const _missedCallSids = new Map();
-
-export const markCallMissed = async (callSid) => {
-  _missedCallSids.set(callSid, Date.now());
-  try {
-    await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).set({
-      callSid,
-      missed: true,
-      recordedAt: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.error("[CALL_RESULTS] Failed to save to Firebase:", err.message);
-  }
-};
-
-export const isCallMissed = async (callSid) => {
-  if (_missedCallSids.has(callSid)) return true;
-  try {
-    const doc = await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).get();
-    if (doc.exists && doc.data().missed) {
-      _missedCallSids.set(callSid, Date.now());
-      return true;
-    }
-  } catch (err) {
-    console.error("[CALL_RESULTS] Failed to check Firebase:", err.message);
-  }
-  return false;
-};
-
-export const isSmsSentForCall = async (callSid) => {
-  if (_smsSentByCallSid.has(callSid)) {
-    return true;
-  }
-  try {
-    const doc = await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).get();
-    if (doc.exists) {
-      _smsSentByCallSid.set(callSid, Date.now());
-      return true;
-    }
-  } catch (err) {
-    console.error("[SMS] Failed to check Firebase:", err.message);
-  }
-  return false;
-};
-
-// ── Batch helpers: Fetch missed/sms status for many callSids in bulk ──
-// Firestore getAll() supports up to 500 docs per call
-const chunkArray = (arr, size) => {
-  const chunks = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-};
-
-export const batchCheckMissed = async (callSids) => {
-  const result = new Set();
-  const toQuery = [];
-
-  for (const sid of callSids) {
-    if (_missedCallSids.has(sid)) {
-      result.add(sid);
-    } else {
-      toQuery.push(sid);
-    }
-  }
-
-  if (toQuery.length > 0) {
-    const chunks = chunkArray(toQuery, 100);
-    for (const chunk of chunks) {
-      try {
-        const refs = chunk.map(sid => defaultDB.collection(CALL_RESULTS_COLLECTION).doc(sid));
-        const docs = await defaultDB.getAll(...refs);
-        docs.forEach((doc) => {
-          if (doc.exists && doc.data().missed) {
-            result.add(doc.id);
-            _missedCallSids.set(doc.id, Date.now());
-          }
-        });
-      } catch (err) {
-        console.error("[CALL_RESULTS] Batch check failed:", err.message);
-      }
-    }
-  }
-
-  return result;
-};
-
-export const batchCheckSmsSent = async (callSids) => {
-  const result = new Set();
-  const toQuery = [];
-
-  for (const sid of callSids) {
-    if (_smsSentByCallSid.has(sid)) {
-      result.add(sid);
-    } else {
-      toQuery.push(sid);
-    }
-  }
-
-  if (toQuery.length > 0) {
-    const chunks = chunkArray(toQuery, 100);
-    for (const chunk of chunks) {
-      try {
-        const refs = chunk.map(sid => defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(sid));
-        const docs = await defaultDB.getAll(...refs);
-        docs.forEach((doc) => {
-          if (doc.exists) {
-            result.add(doc.id);
-            _smsSentByCallSid.set(doc.id, Date.now());
-          }
-        });
-      } catch (err) {
-        console.error("[SMS] Batch check failed:", err.message);
-      }
-    }
-  }
-
-  return result;
 };
 
 export const streamRecording = (recordingSid, authHeader, res) => {

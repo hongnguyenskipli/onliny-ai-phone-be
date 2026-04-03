@@ -54,23 +54,8 @@ export const initSocketIO = (httpServer) => {
     }
     _userSockets.get(uuid).add(socket.id);
 
-    // ── Message ACK from client ───────────────────────────
-    socket.on("message_ack", (data) => {
-      console.log(`[Socket.io] ACK received from ${uuid}:`, data?.messageId);
-      socket.emit("message_ack_confirmed", {
-        messageId: data?.messageId,
-        status: "delivered",
-      });
-    });
-
-    // ── Sync Data Request ─────────────────────────────────
-    socket.on("sync_data", (data) => {
-      console.log(`[Socket.io] Sync request from ${uuid}:`, data);
-      socket.emit("sync_data_response", {
-        action: "full_refresh",
-        lastMessageId: data?.lastMessageId,
-      });
-    });
+    // Communication events (message_ack, sync_data) removed.
+    // Dashboard updates and basic connection state maintained.
 
     // ── Disconnect ────────────────────────────────────────
     socket.on("disconnect", (reason) => {

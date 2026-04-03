@@ -47,38 +47,7 @@ router.get("/calls/:callSid/recordings", verifyToken, async (req, res) => {
   }
 });
 
-router.post("/calls/:callSid/recordings/start", verifyToken, async (req, res) => {
-  const { callSid } = req.params;
-
-  try {
-    const client = getTwilioClient();
-
-    try {
-      await client.calls(callSid).fetch();
-    } catch (err) {
-      return res.status(404).json({ success: false, message: "Call not found." });
-    }
-
-    const recording = await client.calls(callSid).recordings.create({
-      recordingChannels: "dual",
-    });
-    return res.json({ success: true, recordingSid: recording.sid });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Failed to start recording." });
-  }
-});
-
-router.post("/recordings/:recordingSid/stop", verifyToken, async (req, res) => {
-  const { recordingSid } = req.params;
-
-  try {
-    const client = getTwilioClient();
-    await client.recordings(recordingSid).update({ status: "stopped" });
-    return res.json({ success: true });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: "Failed to stop recording." });
-  }
-});
+// Start/Stop recording features deleted as they are part of active calling functionality.
 
 router.get("/recordings/:recordingSid/stream", async (req, res) => {
   const { token } = req.query;
