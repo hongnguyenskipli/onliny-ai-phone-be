@@ -1,23 +1,100 @@
 import { getMessaging } from "firebase-admin/messaging";
 import { defaultDB } from "../server/db.js";
-import { emitToUser, isUserOnline } from "./socketHandler.js";
 
+const MAX_RETRY = 2;
 
-export const sendPushToUser = async (uuid, data) => {
-  // FCM and Socket communication updates deleted.
-  // This service no longer sends real-time notifications for calls or messages.
-  console.log(`[PUSH] Notification suppressed for user ${uuid}: ${data.type}`);
-  return;
+/**
+ * Ensure all FCM data payload values are strings
+ */
+const sanitizeData = (data) => {
+  const result = {};
+  for (const key in data) {
+    const val = data[key];
+    result[key] = typeof val === "string" ? val : JSON.stringify(val);
+  }
+  return result;
 };
 
 /**
- * Map data.type from business logic to socket event names.
+ * Send FCM with retry + token invalid handling
  */
-const mapDataTypeToSocketEvent = (type) => {
-  const mapping = {
-    CALL_UPDATE: "call_status_changed",
-    MESSAGE_NEW: "new_message",
-    DASHBOARD_UPDATE: "dashboard_update",
-  };
-  return mapping[type] || null;
+const sendFCM = async (token, message, retry = MAX_RETRY) => {
+  for (let i = 0; i <= retry; i++) {
+    try {
+      return await getMessaging().send(message);
+    } catch (err) {
+      const code = err?.errorInfo?.code;
+
+      // Token invalid → stop & signal cleanup
+      if (code === "messaging/registration-token-not-registered") {
+        throw { type: "TOKEN_INVALID" };
+      }
+
+      if (i === retry) throw err;
+
+      await new Promise((res) => setTimeout(res, 500 * (i + 1)));
+    }
+  }
+};
+
+/**
+ * SMS + FCM Signal only (NO SOCKET)
+ */
+export const sendPushToUser = async (uuid, data) => {
+  try {
+    // Validate input
+    if (!uuid || !data?.type) {
+      console.log("[PUSH] Invalid payload");
+      return { success: false };
+    }
+
+    // Get token
+    const tokenDoc = await defaultDB
+      .collection("fcm_tokens")
+      .doc(uuid)
+      .get();
+
+    if (!tokenDoc.exists) {
+      console.log(`[PUSH] No token for ${uuid}`);
+      return { success: false, reason: "no_token" };
+    }
+
+    const { token } = tokenDoc.data() || {};
+    if (!token) {
+      console.log(`[PUSH] Empty token for ${uuid}`);
+      return { success: false, reason: "invalid_token" };
+    }
+
+    // Build FCM signal (NOT full message)
+    const message = {
+      token,
+      data: sanitizeData({
+        ...data,
+        timestamp: new Date().toISOString(),
+      }),
+    };
+
+    // Send
+    const response = await sendFCM(token, message);
+
+    console.log(`[PUSH] Signal sent → ${uuid}: ${data.type}`);
+
+    return {
+      success: true,
+      channel: "fcm",
+      messageId: response,
+    };
+
+  } catch (err) {
+    // Cleanup invalid token
+    if (err?.type === "TOKEN_INVALID") {
+      await defaultDB.collection("fcm_tokens").doc(uuid).delete();
+      console.log(`[PUSH] Removed invalid token for ${uuid}`);
+      return { success: false, reason: "token_invalid" };
+    }
+
+    console.error(`[PUSH] Failed for ${uuid}:`, err.message);
+
+    return { success: false };
+  }
 };

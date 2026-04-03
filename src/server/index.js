@@ -16,8 +16,12 @@ import ContactRouter from "../router/contact.js";
 import AutoReplyRouter from "../router/auto-reply.js";
 import { defaultDB } from "./db.js";
 import { openApiSpec } from "../docs/openapi.js";
+import { startCacheCleanup } from "../router/voice/shared.js";
 
 dotenv.config();
+
+// Initialize global cache cleanup
+startCacheCleanup();
 
 export const emailTransporter = nodemailer.createTransport({
   SES: new aws.SES({ ...AWS_CONFIG_ROOT, apiVersion: "2010-12-01" }),

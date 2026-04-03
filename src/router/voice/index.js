@@ -18,7 +18,7 @@ VoiceRouter.use(forwardingRouter);
 VoiceRouter.use(callsRouter);
 VoiceRouter.use(recordingsRouter);
 VoiceRouter.use(webhooksRouter);
-// VoiceRouter.use("/sms", smsRouter);
-// VoiceRouter.use(fcmRouter);
+VoiceRouter.use("/sms", smsRouter);
+VoiceRouter.use(fcmRouter);
 
 export default VoiceRouter;

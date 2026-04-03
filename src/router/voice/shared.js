@@ -2,84 +2,95 @@ import https from "https";
 import twilio from "twilio";
 import jwt from "jsonwebtoken";
 import { defaultDB } from "../../server/db.js";
-import { USER_NUMBERS_COLLECTION, MISSED_CALL_SMS_COLLECTION, CALL_RESULTS_COLLECTION } from "../../constants/index.js";
+import {
+  USER_NUMBERS_COLLECTION
+} from "../../constants/index.js";
 
-const _twilioClient = { current: null };
+/* ================= TWILIO ================= */
+
+let _twilioClient = null;
+
 export const getTwilioClient = () => {
-  if (!_twilioClient.current) {
-    _twilioClient.current = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+  if (!_twilioClient) {
+    _twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
   }
-  return _twilioClient.current;
+  return _twilioClient;
 };
 
+/* ================= UTIL ================= */
+
 export const formatDuration = (seconds) => {
-  const s = parseInt(seconds) || 0;
+  const s = Number.isFinite(+seconds) ? parseInt(seconds) : 0;
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const sec = s % 60;
   return [h, m, sec].map((v) => String(v).padStart(2, "0")).join(":");
 };
 
-export const isMissed = (status) => ["no-answer", "busy", "canceled", "failed"].includes(status);
+export const isMissed = (status) =>
+  ["no-answer", "busy", "canceled", "failed"].includes(status);
+
+/* ================= CALL MAPPER ================= */
 
 export const mapCall = (call, userPhoneNumber = null) => {
+  if (!call || !call.sid) return null;
+
   let isIncoming;
+
   if (userPhoneNumber) {
-    const cleanTo = call.to ? call.to.replace('client:', '') : '';
-    const cleanUser = userPhoneNumber.replace('client:', '');
+    const cleanTo = call.to?.replace("client:", "") || "";
+    const cleanUser = userPhoneNumber.replace("client:", "");
     isIncoming = cleanTo === cleanUser;
   } else {
     isIncoming = call.direction === "inbound";
   }
 
-  const otherNumberRaw = isIncoming ? call.from : call.to;
-  const otherNumber = otherNumberRaw ? otherNumberRaw.replace('client:', '') : '';
-  const otherName = call.callerName || otherNumber;
+  const otherRaw = isIncoming ? call.from : call.to;
+  const otherNumber = otherRaw?.replace("client:", "") || "";
 
   return {
     id: call.sid,
-    callerName: otherName,
+    callerName: call.callerName || otherNumber,
     callerNumber: otherNumber,
     status: isMissed(call.status) ? "missed" : call.status,
-    startTime: call.startTime?.toISOString() || null,
+    startTime: call.startTime?.toISOString?.() || null,
     duration: formatDuration(call.duration),
     direction: isIncoming ? "incoming" : "outgoing",
     hasRecording: false,
-    smsSent: false, // Feature deleted
+    smsSent: false,
   };
 };
+
+/* ================= DB ================= */
 
 export const getUserPhoneNumber = async (uuid) => {
   if (!uuid) return null;
   const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).get();
-  if (doc.exists) return doc.data().phone_number;
-  return null;
+  return doc.exists ? doc.data().phone_number : null;
 };
 
-export const getCallerIdByIdentity = async (identity) => {
-  try {
-    const uuid = identity.replace(/_/g, "-");
-    const doc = await defaultDB.collection(USER_NUMBERS_COLLECTION).doc(uuid).get();
-    if (doc.exists) return doc.data().phone_number;
-  } catch (_) {
-    // ignore
-  }
-  return process.env.TWILIO_PHONE_NUMBER;
-};
-
-// AMD State and Communication tracking removed.
+/* ================= CACHE (Improved) ================= */
 
 const _cache = new Map();
-const CACHE_TTL = 300_000; // 5 minutes
+const CACHE_TTL = 300_000;
 const MAX_CACHE_SIZE = 500;
 
 export const cacheGet = (key) => {
   const entry = _cache.get(key);
   if (!entry) return null;
+
   if (Date.now() - entry.ts > CACHE_TTL) {
     _cache.delete(key);
     return null;
   }
+
+  // refresh for LRU behavior
+  _cache.delete(key);
+  _cache.set(key, entry);
+
   return entry.data;
 };
 
@@ -90,6 +101,7 @@ export const cacheSet = (key, data) => {
   }
   _cache.set(key, { data, ts: Date.now() });
 };
+
 export const cacheDelete = (key) => _cache.delete(key);
 
 export const cacheInvalidateByPrefix = (prefix) => {
@@ -98,57 +110,112 @@ export const cacheInvalidateByPrefix = (prefix) => {
   }
 };
 
-// Global Auto-Cleanup for Memory Leak Prevention (Every 1 hour)
-setInterval(() => {
-  const cutoff2Hours = Date.now() - 2 * 60 * 60 * 1000;
+/* ================= SAFE CLEANUP ================= */
 
-  // Clean _cache
-  for (const [key, entry] of _cache.entries()) {
-    if (Date.now() - entry.ts > CACHE_TTL) {
-      _cache.delete(key);
+let _cleanupStarted = false;
+
+export const startCacheCleanup = () => {
+  if (_cleanupStarted) return;
+  _cleanupStarted = true;
+
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of _cache.entries()) {
+      if (now - entry.ts > CACHE_TTL) {
+        _cache.delete(key);
+      }
     }
-  }
-}, 60 * 60 * 1000);
+  }, 60 * 60 * 1000);
+};
+
+/* ================= JWT ================= */
 
 export const verifyJwtToken = (token) => {
   if (!token) return { valid: false, error: "missing" };
+
   try {
-    jwt.verify(token, process.env.JWT_SECRET);
-    return { valid: true };
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return { valid: true, decoded };
   } catch (err) {
     return { valid: false, error: err.name };
   }
 };
 
-export const streamRecording = (recordingSid, authHeader, res) => {
-  const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}.mp3`;
-  const auth = Buffer.from(`${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`).toString("base64");
+/* ================= STREAM ================= */
 
-  const upstreamHeaders = { Authorization: `Basic ${auth}` };
-  if (authHeader?.range) {
-    upstreamHeaders["Range"] = authHeader.range;
+export const streamRecording = (recordingSid, authHeader, res) => {
+  const url = `https://api.twilio.com/2010-04-01/Accounts/${process.env.TWILIO_ACCOUNT_SID}/Recordings/${recordingSid}.mp3`;
+
+  const auth = Buffer.from(
+    `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
+  ).toString("base64");
+
+  const req = https.request(
+    url,
+    {
+      headers: {
+        Authorization: `Basic ${auth}`,
+        ...(authHeader?.range && { Range: authHeader.range }),
+      },
+      timeout: 10000,
+    },
+    (twilioRes) => {
+      res.writeHead(twilioRes.statusCode || 200, {
+        "Content-Type": twilioRes.headers["content-type"] || "audio/mpeg",
+        "Accept-Ranges": "bytes",
+        "Content-Length": twilioRes.headers["content-length"],
+        "Content-Range": twilioRes.headers["content-range"],
+      });
+
+      twilioRes.pipe(res);
+    }
+  );
+
+  req.on("timeout", () => req.destroy());
+  req.on("error", () => {
+    if (!res.headersSent) {
+      res.status(502).json({ message: "Stream failed" });
+    }
+  });
+
+  res.on("close", () => {
+    req.destroy();
+  });
+
+  req.end();
+};
+
+/* ================= VALIDATION ================= */
+
+export const isValidE164 = (number) =>
+  /^\+[1-9]\d{1,14}$/.test(number);
+
+/* ================= SMS ================= */
+
+const sendWithRetry = async (fn, retry = 2) => {
+  for (let i = 0; i <= retry; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (i === retry) throw err;
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
+  }
+};
+
+export const sendSMS = async (to, body, from, statusCallback = null) => {
+  if (!isValidE164(to) || !isValidE164(from) || !body) {
+    throw new Error("Invalid SMS params");
   }
 
-  const proxyReq = https.request(twilioUrl, { headers: upstreamHeaders }, (twilioRes) => {
-    const statusCode = twilioRes.statusCode || 200;
-    res.status(statusCode);
-    res.setHeader("Content-Type", twilioRes.headers["content-type"] || "audio/mpeg");
-    res.setHeader("Content-Disposition", `inline; filename="${recordingSid}.mp3"`);
-    res.setHeader("Accept-Ranges", "bytes");
-    if (twilioRes.headers["content-length"]) {
-      res.setHeader("Content-Length", twilioRes.headers["content-length"]);
-    }
-    if (twilioRes.headers["content-range"]) {
-      res.setHeader("Content-Range", twilioRes.headers["content-range"]);
-    }
-    twilioRes.pipe(res);
-  });
+  const client = getTwilioClient();
 
-  proxyReq.on("error", () => {
-    if (!res.headersSent) {
-      res.status(502).json({ message: "Failed to stream recording." });
-    }
-  });
-
-  proxyReq.end();
+  return sendWithRetry(() =>
+    client.messages.create({
+      to,
+      from,
+      body,
+      ...(statusCallback && { statusCallback }),
+    })
+  );
 };
