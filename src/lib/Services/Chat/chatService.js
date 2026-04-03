@@ -166,15 +166,15 @@ export const chatService = {
       .collection(MESSAGES_COLLECTION)
       .where("conversationId", "==", normalizedNumber)
       .where("participants", "array-contains", userUuid)
-      .orderBy("createdAt", "desc")
+      .orderBy("updatedAt", "desc")
       .limit(limit);
 
-    // Delta sync by createdAt
+    // Delta sync by updatedAt (covers both new messages and status changes)
     if (since) {
       const sinceDate = new Date(since);
       if (!isNaN(sinceDate)) {
         query = query.where(
-          "createdAt",
+          "updatedAt",
           ">",
           Timestamp.fromDate(sinceDate)
         );
