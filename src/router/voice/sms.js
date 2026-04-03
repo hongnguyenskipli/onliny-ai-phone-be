@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { sendSMS, isValidE164, getUserPhoneNumber } from "./shared.js";
 import { chatService } from "../../lib/Services/Chat/chatService.js";
-import { verifyToken } from "../../middleware/auth.js";
+import { verifyToken } from "../../middleware/verifyToken.js";
 
 const router = Router();
 
