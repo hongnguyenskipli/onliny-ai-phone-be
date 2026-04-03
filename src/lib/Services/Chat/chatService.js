@@ -1,5 +1,5 @@
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
-import { defaultDB } from "../../server/db.js";
+import { defaultDB } from "../../../server/db.js";
 import {
   MESSAGES_COLLECTION,
   VOICE_BINDINGS_COLLECTION
