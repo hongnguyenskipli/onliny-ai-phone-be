@@ -6,7 +6,7 @@ import { FCM_TOKENS_COLLECTION } from "../../constants/index.js";
 const router = Router();
 
 router.post("/fcm-token", verifyToken, async (req, res) => {
-  const { fcmToken } = req.body;
+  const { fcmToken, platform = "android" } = req.body;
   const { uuid } = req.user;
 
   if (!fcmToken) {
@@ -18,6 +18,7 @@ router.post("/fcm-token", verifyToken, async (req, res) => {
     await defaultDB.collection(FCM_TOKENS_COLLECTION).doc(uuid).set({
       token: fcmToken,
       uuid,
+      platform: platform.toLowerCase(),
       updatedAt: new Date().toISOString(),
     });
     console.log(`[FCM] Successfully saved token for user ${uuid}`);
