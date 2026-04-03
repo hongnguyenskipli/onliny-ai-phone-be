@@ -68,6 +68,7 @@ setInterval(() => {
 
 const _cache = new Map();
 const CACHE_TTL = 300_000; // 5 minutes — Twilio API is slow, cache aggressively
+const MAX_CACHE_SIZE = 500;
 
 export const cacheGet = (key) => {
   const entry = _cache.get(key);
@@ -79,7 +80,13 @@ export const cacheGet = (key) => {
   return entry.data;
 };
 
-export const cacheSet = (key, data) => _cache.set(key, { data, ts: Date.now() });
+export const cacheSet = (key, data) => {
+  if (_cache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = _cache.keys().next().value;
+    _cache.delete(oldestKey);
+  }
+  _cache.set(key, { data, ts: Date.now() });
+};
 export const cacheDelete = (key) => _cache.delete(key);
 
 export const cacheInvalidateByPrefix = (prefix) => {
@@ -131,8 +138,13 @@ export const sendSMS = async (to, body, from) => {
 };
 
 const _smsSentByCallSid = new Map();
+const MAX_SMS_SID_MAP_SIZE = 500;
 
 export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, smsSid) => {
+  if (_smsSentByCallSid.size >= MAX_SMS_SID_MAP_SIZE) {
+    const oldestKey = _smsSentByCallSid.keys().next().value;
+    _smsSentByCallSid.delete(oldestKey);
+  }
   _smsSentByCallSid.set(callSid, Date.now());
   try {
     await defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(callSid).set({
@@ -151,17 +163,41 @@ export const markSmsSentForCall = async (callSid, callerNumber, calledNumber, sm
 // ── Rejected Call Tracking (user explicitly denied) ──────────
 // When user taps "Deny", frontend calls markCallRejected() so
 // we skip auto-reply SMS for intentionally rejected calls.
+// Persisted to Firestore to survive server restarts.
 const _rejectedCallSids = new Set();
 
-export const markCallRejected = (callSid) => {
+export const markCallRejected = async (callSid) => {
   if (!callSid) return;
   _rejectedCallSids.add(callSid);
-  // Auto-cleanup after 10 minutes
-  setTimeout(() => _rejectedCallSids.delete(callSid), 10 * 60 * 1000);
+  let persisted = false;
+  try {
+    await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).set({
+      callSid,
+      rejected: true,
+      recordedAt: new Date().toISOString(),
+    }, { merge: true });
+    persisted = true;
+  } catch (err) {
+    console.error("[CALL_RESULTS] Failed to save rejected state:", err.message);
+  }
+  // Only cleanup from memory if persisted to Firestore.
+  // If persist failed, keep in-memory longer (30 min) as safety net.
+  const cleanupMs = persisted ? 10 * 60 * 1000 : 30 * 60 * 1000;
+  setTimeout(() => _rejectedCallSids.delete(callSid), cleanupMs);
 };
 
-export const isCallRejected = (callSid) => {
-  return _rejectedCallSids.has(callSid);
+export const isCallRejected = async (callSid) => {
+  if (_rejectedCallSids.has(callSid)) return true;
+  try {
+    const doc = await defaultDB.collection(CALL_RESULTS_COLLECTION).doc(callSid).get();
+    if (doc.exists && doc.data().rejected) {
+      _rejectedCallSids.add(callSid);
+      return true;
+    }
+  } catch (err) {
+    console.error("[CALL_RESULTS] Failed to check rejected state:", err.message);
+  }
+  return false;
 };
 
 // ── Missed Call Tracking (by CallSid, NOT callerNumber) ──────
@@ -172,9 +208,14 @@ export const isCallRejected = (callSid) => {
 // backward compat but no longer contaminates other calls.
 const _callerMissedLog = [];
 const CALLER_MISSED_WINDOW_MS = 5 * 60 * 1000;
+const MAX_MISSED_LOG_SIZE = 500;
 
 export const markCallerMissed = (callerNumber) => {
   if (!callerNumber) return;
+  // Evict oldest if exceeds max size before pushing
+  if (_callerMissedLog.length >= MAX_MISSED_LOG_SIZE) {
+    _callerMissedLog.splice(0, _callerMissedLog.length - MAX_MISSED_LOG_SIZE + 1);
+  }
   _callerMissedLog.push({ callerNumber, timestamp: Date.now() });
   const cutoff = Date.now() - CALLER_MISSED_WINDOW_MS;
   while (_callerMissedLog.length > 0 && _callerMissedLog[0].timestamp < cutoff) {

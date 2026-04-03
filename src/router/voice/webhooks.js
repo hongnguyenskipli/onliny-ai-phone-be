@@ -179,6 +179,7 @@ router.all("/call-answered", async (req, res) => {
 
 const _smsSentCache = new Map();
 const SMS_CACHE_TTL = 5 * 60 * 1000;
+const MAX_SMS_CACHE_SIZE = 200;
 
 setInterval(() => {
   const cutoff = Date.now() - SMS_CACHE_TTL;
@@ -270,7 +271,7 @@ router.all("/dial-action", async (req, res) => {
   }
 
   // Skip auto-reply if user explicitly rejected (denied) the call
-  if (isCallRejected(CallSid)) {
+  if (await isCallRejected(CallSid)) {
     console.log(`[DIAL-ACTION] Call was rejected by user, skipping auto-reply SMS`);
     return;
   }
@@ -312,6 +313,11 @@ router.all("/dial-action", async (req, res) => {
 
     _smsSentCache.set(cacheKey, Date.now());
     _smsSentCache.set(recentKey, Date.now());
+    // Evict oldest if cache exceeds max size
+    while (_smsSentCache.size > MAX_SMS_CACHE_SIZE) {
+      const oldestKey = _smsSentCache.keys().next().value;
+      _smsSentCache.delete(oldestKey);
+    }
     await markSmsSentForCall(CallSid, From, To, smsSid);
 
     // Send push notification to user
@@ -387,12 +393,12 @@ router.post("/calls/missed-sms", verifyToken, async (req, res) => {
 });
 
 // Mark a call as rejected (user tapped Deny) — prevents auto-reply SMS
-router.post("/calls/mark-rejected", verifyToken, (req, res) => {
+router.post("/calls/mark-rejected", verifyToken, async (req, res) => {
   const { callSid } = req.body;
   if (!callSid) {
     return res.status(400).json({ message: "Missing callSid" });
   }
-  markCallRejected(callSid);
+  await markCallRejected(callSid);
   console.log(`[REJECT] CallSid=${callSid} marked as rejected by user`);
   return res.json({ success: true });
 });
