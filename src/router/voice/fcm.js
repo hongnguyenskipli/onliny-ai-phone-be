@@ -29,4 +29,17 @@ router.post("/fcm-token", verifyToken, async (req, res) => {
   }
 });
 
+router.delete("/fcm-token", verifyToken, async (req, res) => {
+  const { uuid } = req.user;
+
+  try {
+    await defaultDB.collection(FCM_TOKENS_COLLECTION).doc(uuid).delete();
+    console.log(`[FCM] Deleted token for user ${uuid}`);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("[FCM] Failed to delete token:", err.message);
+    return res.status(500).json({ message: "Failed to delete FCM token" });
+  }
+});
+
 export default router;
