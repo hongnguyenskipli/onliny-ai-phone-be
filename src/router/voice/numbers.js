@@ -76,9 +76,11 @@ router.post("/purchase-number", verifyToken, async (req, res) => {
 
   try {
     const client = getTwilioClient();
+
     const purchased = await client.incomingPhoneNumbers.create({
       phoneNumber,
       voiceApplicationSid: TWILIO_APP_SID,
+      smsApplicationSid: TWILIO_APP_SID,
     });
 
     const numberData = {
