@@ -24,7 +24,7 @@ const generateIdempotencyKey = (uuid, to, body) => {
     .substring(0, 16);
 };
 
-const normalizeTwilioMessage = (msg) => {
+const normalizeTwilioMessage = (msg, userPhone) => {
   return {
     id: msg.sid,
     twilioSid: msg.sid,
@@ -32,7 +32,7 @@ const normalizeTwilioMessage = (msg) => {
     body: msg.body || '',
     from: msg.from,
     to: msg.to,
-    direction: msg.direction === 'outbound-api' ? 'outgoing' : 'incoming',
+    direction: msg.from === userPhone ? 'outgoing' : 'incoming',
     status: msg.status === 'queued' || msg.status === 'sending' ? 'sent' : msg.status,
     startTime: msg.dateCreated ? new Date(msg.dateCreated).toISOString() : new Date().toISOString(),
     createdAt: msg.dateCreated ? new Date(msg.dateCreated).toISOString() : new Date().toISOString(),
@@ -82,7 +82,7 @@ router.post("/send", verifyToken, async (req, res) => {
       throw err;
     }
 
-    const normalizedMsg = normalizeTwilioMessage(message);
+    const normalizedMsg = normalizeTwilioMessage(message, fromNumber);
     normalizedMsg.tempId = tempId;
 
     // Track this SID so inbound webhook knows not to send duplicate FCM
@@ -137,7 +137,7 @@ router.get("/history", verifyToken, async (req, res) => {
 
     const allMessages = [...outbound, ...inbound]
       .sort((a, b) => (a.dateSent || a.dateCreated) - (b.dateSent || b.dateCreated))
-      .map(normalizeTwilioMessage);
+      .map(msg => normalizeTwilioMessage(msg, userPhone));
 
     return res.json({
       success: true,
