@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { verifyToken } from "../../middleware/verifyToken.js";
-import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet, getAutoReplySidSet, enrichWithSmsStatus } from "./shared.js";
+import { getTwilioClient, getUserPhoneNumber, mapCall, cacheGet, cacheSet } from "./shared.js";
 
 const router = Router();
 
@@ -177,11 +177,9 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
       cacheSet(smsCacheKey, rawSmsMessages);
     }
 
-    const autoReplySids = await getAutoReplySidSet(phoneNumber);
-    const smsMessages = rawSmsMessages.map((msg) => mapSms(msg, autoReplySids));
+    const smsMessages = rawSmsMessages.map((msg) => mapSms(msg));
 
-    const enrichedCalls = (await enrichWithSmsStatus(calls)).map((c) => ({ ...c, type: "call" }));
-    const allItems = [...enrichedCalls, ...smsMessages].sort(
+    const allItems = [...calls, ...smsMessages].sort(
       (a, b) => new Date(a.startTime) - new Date(b.startTime)
     );
 

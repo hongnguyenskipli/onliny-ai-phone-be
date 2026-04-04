@@ -1,14 +1,12 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { sendSMS, isValidE164, getUserPhoneNumber } from "./shared.js";
-import { chatService } from "../../lib/Services/Chat/chatService.js";
+import { sendSMS, isValidE164, getUserPhoneNumber, getTwilioClient } from "./shared.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 
 const router = Router();
 
-// In-memory idempotency cache
 const requestCache = new Map();
-const CACHE_TTL = 60000; // 1 minute
+const CACHE_TTL = 60000;
 
 const generateIdempotencyKey = (uuid, to, body) => {
   return crypto
@@ -16,6 +14,23 @@ const generateIdempotencyKey = (uuid, to, body) => {
     .update(`${uuid}-${to}-${body}-${Date.now()}`)
     .digest('hex')
     .substring(0, 16);
+};
+
+const normalizeTwilioMessage = (msg) => {
+  return {
+    id: msg.sid,
+    twilioSid: msg.sid,
+    type: 'sms',
+    body: msg.body || '',
+    from: msg.from,
+    to: msg.to,
+    direction: msg.direction === 'outbound-api' ? 'outgoing' : 'incoming',
+    status: msg.status === 'queued' || msg.status === 'sending' ? 'sent' : msg.status,
+    startTime: msg.dateCreated ? new Date(msg.dateCreated).toISOString() : new Date().toISOString(),
+    createdAt: msg.dateCreated ? new Date(msg.dateCreated).toISOString() : new Date().toISOString(),
+    updatedAt: msg.dateUpdated ? new Date(msg.dateUpdated).toISOString() : new Date().toISOString(),
+    isAutoReply: false,
+  };
 };
 
 router.post("/send", verifyToken, async (req, res) => {
@@ -41,7 +56,6 @@ router.post("/send", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "Self-sending not allowed" });
     }
 
-    // Idempotency check
     const idempKey = idempotencyKey || generateIdempotencyKey(uuid, to, body);
     const cached = requestCache.get(idempKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
@@ -50,61 +64,27 @@ router.post("/send", verifyToken, async (req, res) => {
 
     const tempId = clientTempId || `${uuid}_${Date.now()}`;
 
-    // 1. Save sending state
-    await chatService.saveMessage({
-      tempId,
-      from: fromNumber,
-      to,
-      body,
-      status: "sending",
-      direction: "outgoing",
-      fromUuid: uuid,
-      conversationId: to,
-      participants: [uuid, to],
-    });
-
     const protocol = req.headers['x-forwarded-proto'] || (req.secure ? "https" : "http");
     const statusCallback = `${protocol}://${req.get("host")}/api/voice/webhooks/sms-status`;
 
     let message;
     try {
-      // 2. Send SMS
       message = await sendSMS(to, body, fromNumber, statusCallback);
     } catch (err) {
-      await chatService.saveMessage({
-        tempId,
-        status: "failed",
-        fromUuid: uuid,
-      });
       throw err;
     }
 
-    // 3. Update sent state with SID
-    const savedMsg = await chatService.saveMessage({
-      tempId,
-      twilioSid: message.sid,
-      status: "sent",
-      fromUuid: uuid,
-    });
+    const normalizedMsg = normalizeTwilioMessage(message);
+    normalizedMsg.tempId = tempId;
 
-    // Cache result
-    requestCache.set(idempKey, { result: savedMsg, timestamp: Date.now() });
+    requestCache.set(idempKey, { result: normalizedMsg, timestamp: Date.now() });
     setTimeout(() => requestCache.delete(idempKey), CACHE_TTL);
-
-    // 4. Trigger FCM signal to SENDER (for status update)
-    await chatService.triggerSignal(uuid, "MESSAGE_STATUS_UPDATE", to, fromNumber);
-
-    // 5. Trigger FCM signal to RECIPIENT (if they are a user)
-    const recipientUuid = await chatService.getUuidByPhone(to);
-    if (recipientUuid) {
-      await chatService.triggerSignal(recipientUuid, "NEW_MESSAGE", fromNumber, fromNumber);
-    }
 
     console.log(`[SMS OUTBOUND] Sent SID: ${message.sid}`);
 
     return res.json({
       success: true,
-      data: savedMsg,
+      data: normalizedMsg,
     });
 
   } catch (err) {
@@ -122,16 +102,32 @@ router.get("/history", verifyToken, async (req, res) => {
   }
 
   try {
-    const messages = await chatService.getHistory(
-      uuid,
-      contactNumber,
-      since,
-      Math.min(parseInt(limit) || 50, 100)
-    );
+    const client = getTwilioClient();
+    const userPhone = await getUserPhoneNumber(uuid);
+
+    if (!userPhone) {
+      return res.status(400).json({ message: "No phone number found for user" });
+    }
+
+    const queryParams = { limit: Math.min(parseInt(limit) || 50, 100) };
+
+    if (since) {
+      const sinceDate = new Date(since);
+      if (!isNaN(sinceDate)) {
+        queryParams.dateSentAfter = sinceDate;
+      }
+    }
+
+    const messages = await client.messages.list(queryParams);
+
+    const filteredMessages = messages
+      .filter(msg => msg.from === userPhone || msg.to === userPhone)
+      .filter(msg => msg.from === contactNumber || msg.to === contactNumber)
+      .map(normalizeTwilioMessage);
 
     return res.json({
       success: true,
-      messages: messages.filter(msg => !msg.id.startsWith('temp_') || msg.status === 'sending'),
+      messages: filteredMessages,
     });
 
   } catch (err) {

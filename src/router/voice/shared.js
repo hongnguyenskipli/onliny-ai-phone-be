@@ -4,8 +4,6 @@ import jwt from "jsonwebtoken";
 import { defaultDB } from "../../server/db.js";
 import {
   USER_NUMBERS_COLLECTION,
-  MISSED_CALL_SMS_COLLECTION,
-  MESSAGES_COLLECTION,
 } from "../../constants/index.js";
 
 /* ================= TWILIO ================= */
@@ -262,82 +260,6 @@ export const sendSMS = async (to, body, from, statusCallback = null) => {
 
 export const isCallMissed = (status) =>
   ["no-answer", "busy", "canceled", "failed"].includes(status);
-
-export const isSmsSentForCall = async (callSid) => {
-  if (!callSid) return false;
-  try {
-    const doc = await defaultDB
-      .collection(MISSED_CALL_SMS_COLLECTION)
-      .doc(callSid)
-      .get();
-    return doc.exists;
-  } catch (err) {
-    console.error(`Error checking SMS status for call ${callSid}:`, err);
-    return false;
-  }
-};
-
-export const markSmsSentForCall = async (callSid) => {
-  if (!callSid) return;
-  try {
-    await defaultDB
-      .collection(MISSED_CALL_SMS_COLLECTION)
-      .doc(callSid)
-      .set({ sentAt: new Date().toISOString() });
-  } catch (err) {
-    console.error(`Error marking SMS sent for call ${callSid}:`, err);
-  }
-};
-
-export const getAutoReplySidSet = async (phoneNumber) => {
-  if (!phoneNumber) return new Set();
-  
-  try {
-    const snapshot = await defaultDB
-      .collection(MESSAGES_COLLECTION)
-      .where("to", "==", phoneNumber)
-      .where("type", "==", "auto_reply")
-      .get();
-    
-    return new Set(snapshot.docs.map(doc => doc.data().twilioSid));
-  } catch (err) {
-    console.error(`Error getting auto-reply SIDs for ${phoneNumber}:`, err);
-    return new Set();
-  }
-};
-
-export const enrichWithSmsStatus = async (calls) => {
-  if (!Array.isArray(calls)) return [];
-  
-  const enriched = await Promise.all(
-    calls.map(async (call) => ({
-      ...call,
-      smsSent: await isSmsSentForCall(call.id),
-    }))
-  );
-  return enriched;
-};
-
-export const batchCheckSmsSent = async (callSids) => {
-  if (!Array.isArray(callSids) || callSids.length === 0) return {};
-  
-  try {
-    const docs = await Promise.all(
-      callSids.map(sid => 
-        defaultDB.collection(MISSED_CALL_SMS_COLLECTION).doc(sid).get()
-      )
-    );
-    
-    const result = {};
-    docs.forEach((doc, idx) => {
-      result[callSids[idx]] = doc.exists;
-    });
-    return result;
-  } catch (err) {
-    console.error("Error batch checking SMS sent:", err);
-    return {};
-  }
-};
 
 // Auto-start cache cleanup
 startCacheCleanup();

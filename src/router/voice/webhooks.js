@@ -471,16 +471,6 @@ router.post(
             
             const smsResult = await sendSMS(From, messageBody, To);
             
-            // Log auto-reply
-            await defaultDB.collection("missed_call_sms").doc(actualCallSid).set({
-              callSid: actualCallSid,
-              from: To,
-              to: From,
-              message: messageBody,
-              smsSid: smsResult.sid,
-              sentAt: FieldValue.serverTimestamp(),
-            });
-            
             console.log(`[VOICE AUTO-REPLY] Sent: ${smsResult.sid}`);
           } catch (smsErr) {
             console.error(`[VOICE AUTO-REPLY] Failed to send SMS:`, smsErr);
@@ -565,23 +555,7 @@ router.post(
       // Sanitize body
       const sanitizedBody = sanitizeBody(Body);
 
-      // Save message
-      await chatService.saveMessage({
-        twilioSid: MessageSid,
-        from: From,
-        to: To,
-        body: sanitizedBody,
-        mediaUrls: hasMedia ? mediaUrls : null,
-        hasMedia,
-        status: "delivered",
-        direction: "incoming",
-        toUuid,
-        conversationId: From,
-        participants: [toUuid, From],
-        receivedAt: FieldValue.serverTimestamp(),
-      });
-
-      // Trigger push notification (async, don't wait)
+      // Trigger push notification with message data
       chatService.triggerSignal(toUuid, "NEW_MESSAGE", From, From)
         .catch(err => console.error('[SMS] Push failed:', err));
 
@@ -640,27 +614,10 @@ router.post(
         }
       }
 
-      // Update message status
-      const updateData = {
-        twilioSid: MessageSid,
-        status: mappedStatus,
-        fromUuid: fromUuid || null,
-        lastStatusUpdate: new Date().toISOString(),
-      };
-
-      if (ErrorCode) {
-        updateData.errorCode = ErrorCode;
-        updateData.errorMessage = ErrorMessage;
-      }
-
-      const updated = await chatService.saveMessage(updateData);
-
       // Trigger status update signal
-      const targetUuid = updated?.fromUuid || fromUuid;
-
-      if (targetUuid) {
+      if (fromUuid) {
         chatService.triggerSignal(
-          targetUuid,
+          fromUuid,
           "MESSAGE_STATUS_UPDATE",
           To,
           From
