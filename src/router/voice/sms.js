@@ -81,17 +81,6 @@ router.post("/send", verifyToken, async (req, res) => {
     requestCache.set(idempKey, { result: normalizedMsg, timestamp: Date.now() });
     setTimeout(() => requestCache.delete(idempKey), CACHE_TTL);
 
-    // Notify sender for status update
-    chatService.triggerSignal(uuid, "MESSAGE_STATUS_UPDATE", to, fromNumber)
-      .catch(err => console.error('[SMS] Sender signal failed:', err));
-
-    // Notify recipient immediately if they are a user
-    const recipientUuid = await chatService.getUuidByPhone(to);
-    if (recipientUuid) {
-      chatService.triggerSignal(recipientUuid, "NEW_MESSAGE", fromNumber, fromNumber, body, message.sid)
-        .catch(err => console.error('[SMS] Recipient signal failed:', err));
-    }
-
     console.log(`[SMS OUTBOUND] Sent SID: ${message.sid}`);
 
     return res.json({
