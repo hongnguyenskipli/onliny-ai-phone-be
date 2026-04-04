@@ -9,6 +9,13 @@ const router = Router();
 const requestCache = new Map();
 const CACHE_TTL = 60000;
 
+export const sentMessageSids = new Set();
+const SID_CACHE_TTL = 120000;
+
+setInterval(() => {
+  sentMessageSids.clear();
+}, SID_CACHE_TTL);
+
 const generateIdempotencyKey = (uuid, to, body) => {
   return crypto
     .createHash('sha256')
@@ -78,8 +85,19 @@ router.post("/send", verifyToken, async (req, res) => {
     const normalizedMsg = normalizeTwilioMessage(message);
     normalizedMsg.tempId = tempId;
 
+    // Track this SID so inbound webhook knows not to send duplicate FCM
+    sentMessageSids.add(message.sid);
+    setTimeout(() => sentMessageSids.delete(message.sid), SID_CACHE_TTL);
+
     requestCache.set(idempKey, { result: normalizedMsg, timestamp: Date.now() });
     setTimeout(() => requestCache.delete(idempKey), CACHE_TTL);
+
+    // Notify recipient immediately so UI updates without waiting for Twilio webhook
+    const recipientUuid = await chatService.getUuidByPhone(to);
+    if (recipientUuid) {
+      chatService.triggerSignal(recipientUuid, "NEW_MESSAGE", fromNumber, fromNumber, body, message.sid)
+        .catch(err => console.error('[SMS] Recipient signal failed:', err));
+    }
 
     console.log(`[SMS OUTBOUND] Sent SID: ${message.sid}`);
 
