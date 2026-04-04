@@ -555,8 +555,8 @@ router.post(
       // Sanitize body
       const sanitizedBody = sanitizeBody(Body);
 
-      // Trigger push notification with message data
-      chatService.triggerSignal(toUuid, "NEW_MESSAGE", From, From)
+      // Send push with message data so frontend can update UI immediately
+      chatService.triggerSignal(toUuid, "NEW_MESSAGE", From, From, sanitizedBody, MessageSid)
         .catch(err => console.error('[SMS] Push failed:', err));
 
       console.log(

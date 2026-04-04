@@ -28,18 +28,23 @@ export const chatService = {
     return uuid;
   },
 
-  async triggerSignal(targetUuid, type, conversationId, fromNumber) {
+  async triggerSignal(targetUuid, type, conversationId, fromNumber, messageBody, messageSid) {
     if (!targetUuid || !type) {
       console.warn('[Chat] triggerSignal: missing params');
       return;
     }
 
     try {
-      return await sendPushToUser(targetUuid, {
+      const pushData = {
         type,
         conversationId: this._normalizePhone(conversationId),
         senderNumber: fromNumber,
-      });
+      };
+
+      if (messageBody) pushData.messageBody = messageBody;
+      if (messageSid) pushData.messageSid = messageSid;
+
+      return await sendPushToUser(targetUuid, pushData);
     } catch (error) {
       console.error('[Chat] triggerSignal error:', error);
     }

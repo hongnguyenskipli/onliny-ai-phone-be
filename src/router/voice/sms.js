@@ -109,25 +109,20 @@ router.get("/history", verifyToken, async (req, res) => {
       return res.status(400).json({ message: "No phone number found for user" });
     }
 
-    const queryParams = { limit: Math.min(parseInt(limit) || 50, 100) };
+    const limitNum = Math.min(parseInt(limit) || 50, 100);
 
-    if (since) {
-      const sinceDate = new Date(since);
-      if (!isNaN(sinceDate)) {
-        queryParams.dateSentAfter = sinceDate;
-      }
-    }
+    const [outbound, inbound] = await Promise.all([
+      client.messages.list({ from: userPhone, to: contactNumber, limit: limitNum }).catch(() => []),
+      client.messages.list({ from: contactNumber, to: userPhone, limit: limitNum }).catch(() => []),
+    ]);
 
-    const messages = await client.messages.list(queryParams);
-
-    const filteredMessages = messages
-      .filter(msg => msg.from === userPhone || msg.to === userPhone)
-      .filter(msg => msg.from === contactNumber || msg.to === contactNumber)
+    const allMessages = [...outbound, ...inbound]
+      .sort((a, b) => (a.dateSent || a.dateCreated) - (b.dateSent || b.dateCreated))
       .map(normalizeTwilioMessage);
 
     return res.json({
       success: true,
-      messages: filteredMessages,
+      messages: allMessages,
     });
 
   } catch (err) {
