@@ -161,21 +161,18 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
       cacheSet(callCacheKey, calls);
     }
 
-    let rawSmsMessages = cacheGet(smsCacheKey);
-    if (!rawSmsMessages) {
-      let [outboundSms, inboundSms] = await Promise.all([
-        client.messages.list({ from: userPhoneNumber, to: phoneNumber, limit: 100 }).catch(() => []),
-        client.messages.list({ from: phoneNumber, to: userPhoneNumber, limit: 100 }).catch(() => []),
-      ]);
+    // Always fetch fresh SMS - no cache to ensure new messages appear immediately
+    let [outboundSms, inboundSms] = await Promise.all([
+      client.messages.list({ from: userPhoneNumber, to: phoneNumber, limit: 100 }).catch(() => []),
+      client.messages.list({ from: phoneNumber, to: userPhoneNumber, limit: 100 }).catch(() => []),
+    ]);
 
-      outboundSms = outboundSms.filter((msg) => !msg.direction.includes("inbound"));
-      inboundSms = inboundSms.filter((msg) => msg.direction.includes("inbound"));
+    outboundSms = outboundSms.filter((msg) => !msg.direction.includes("inbound"));
+    inboundSms = inboundSms.filter((msg) => msg.direction.includes("inbound"));
 
-      rawSmsMessages = [...outboundSms, ...inboundSms].sort(
-        (a, b) => new Date(a.dateSent || a.dateCreated) - new Date(b.dateSent || b.dateCreated)
-      );
-      cacheSet(smsCacheKey, rawSmsMessages);
-    }
+    const rawSmsMessages = [...outboundSms, ...inboundSms].sort(
+      (a, b) => new Date(a.dateSent || a.dateCreated) - new Date(b.dateSent || b.dateCreated)
+    );
 
     const smsMessages = rawSmsMessages.map((msg) => mapSms(msg));
 
