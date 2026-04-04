@@ -8,8 +8,6 @@ const router = Router();
 
 const requestCache = new Map();
 const CACHE_TTL = 60000;
-
-const generateIdempotencyKey = (uuid, to, body) => {
   return crypto
     .createHash('sha256')
     .update(`${uuid}-${to}-${body}-${Date.now()}`)
@@ -80,6 +78,13 @@ router.post("/send", verifyToken, async (req, res) => {
 
     requestCache.set(idempKey, { result: normalizedMsg, timestamp: Date.now() });
     setTimeout(() => requestCache.delete(idempKey), CACHE_TTL);
+
+    // Notify recipient immediately so UI updates without waiting for Twilio webhook
+    const recipientUuid = await chatService.getUuidByPhone(to);
+    if (recipientUuid) {
+      chatService.triggerSignal(recipientUuid, "NEW_MESSAGE", fromNumber, fromNumber, body, message.sid)
+        .catch(err => console.error('[SMS] Recipient signal failed:', err));
+    }
 
     console.log(`[SMS OUTBOUND] Sent SID: ${message.sid}`);
 
