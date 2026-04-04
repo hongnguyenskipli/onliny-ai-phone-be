@@ -2,7 +2,7 @@ import { Router } from "express";
 import { chatService } from "../../lib/Services/Chat/chatService.js";
 import { voiceService } from "../../lib/Services/Voice/voiceService.js";
 import { getAutoReplyByPhoneNumber } from "../../lib/Services/AutoReply/index.js";
-import { isValidE164, sendSMS, cacheGet, cacheSet, getUserPhoneNumber, sentMessageSids } from "./shared.js";
+import { isValidE164, sendSMS, cacheGet, cacheSet, getUserPhoneNumber } from "./shared.js";
 import twilio from "twilio";
 import { defaultDB } from "../../server/db.js";
 import { FieldValue } from "firebase-admin/firestore";
@@ -555,14 +555,9 @@ router.post(
       // Sanitize body
       const sanitizedBody = sanitizeBody(Body);
 
-      // Skip FCM if this message was already sent from our outbound handler
-      if (sentMessageSids.has(MessageSid)) {
-        console.log(`[SMS INBOUND] Skipping FCM - already sent from outbound handler: ${MessageSid}`);
-      } else {
-        // Send push with message data so frontend can update UI immediately
-        chatService.triggerSignal(toUuid, "NEW_MESSAGE", From, From, sanitizedBody, MessageSid)
-          .catch(err => console.error('[SMS] Push failed:', err));
-      }
+      // Send push with message data so frontend can update UI immediately
+      chatService.triggerSignal(toUuid, "NEW_MESSAGE", From, From, sanitizedBody, MessageSid)
+        .catch(err => console.error('[SMS] Push failed:', err));
 
       console.log(
         `[SMS INBOUND] ${MessageSid} -> ${toUuid}${

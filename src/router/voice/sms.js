@@ -1,6 +1,6 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { sendSMS, isValidE164, getUserPhoneNumber, getTwilioClient, sentMessageSids } from "./shared.js";
+import { sendSMS, isValidE164, getUserPhoneNumber, getTwilioClient } from "./shared.js";
 import { chatService } from "../../lib/Services/Chat/chatService.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 
@@ -8,7 +8,6 @@ const router = Router();
 
 const requestCache = new Map();
 const CACHE_TTL = 60000;
-const SID_CACHE_TTL = 120000;
 
 const generateIdempotencyKey = (uuid, to, body) => {
   return crypto
@@ -79,19 +78,8 @@ router.post("/send", verifyToken, async (req, res) => {
     const normalizedMsg = normalizeTwilioMessage(message, fromNumber);
     normalizedMsg.tempId = tempId;
 
-    // Track this SID so inbound webhook knows not to send duplicate FCM
-    sentMessageSids.add(message.sid);
-    setTimeout(() => sentMessageSids.delete(message.sid), SID_CACHE_TTL);
-
     requestCache.set(idempKey, { result: normalizedMsg, timestamp: Date.now() });
     setTimeout(() => requestCache.delete(idempKey), CACHE_TTL);
-
-    // Notify recipient immediately so UI updates without waiting for Twilio webhook
-    const recipientUuid = await chatService.getUuidByPhone(to);
-    if (recipientUuid) {
-      chatService.triggerSignal(recipientUuid, "NEW_MESSAGE", fromNumber, fromNumber, body, message.sid)
-        .catch(err => console.error('[SMS] Recipient signal failed:', err));
-    }
 
     console.log(`[SMS OUTBOUND] Sent SID: ${message.sid}`);
 
