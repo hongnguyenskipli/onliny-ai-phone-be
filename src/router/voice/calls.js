@@ -116,16 +116,16 @@ router.get("/calls/stats", verifyToken, async (req, res) => {
 // Auto-reply and Missed SMS logic removed.
 // Original calls.js now only provides history and analytics.
 
-const mapSms = (msg, userPhone) => ({
+const mapSms = (msg, autoReplySids = new Set()) => ({
   type: "sms",
   id: msg.sid,
   body: msg.body,
-  direction: msg.from === userPhone ? "outgoing" : "incoming",
+  direction: msg.direction === "inbound" ? "incoming" : "outgoing",
   startTime: msg.dateSent?.toISOString() || msg.dateCreated?.toISOString() || null,
   status: msg.status,
   from: msg.from ? msg.from.replace('client:', '') : '',
   to: msg.to ? msg.to.replace('client:', '') : '',
-  isAutoReply: false,
+  isAutoReply: autoReplySids.has(msg.sid),
 });
 
 router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
@@ -174,7 +174,7 @@ router.get("/calls/contact/:phoneNumber", verifyToken, async (req, res) => {
       (a, b) => new Date(a.dateSent || a.dateCreated) - new Date(b.dateSent || b.dateCreated)
     );
 
-    const smsMessages = rawSmsMessages.map((msg) => mapSms(msg, userPhoneNumber));
+    const smsMessages = rawSmsMessages.map((msg) => mapSms(msg));
 
     const allItems = [...calls, ...smsMessages].sort(
       (a, b) => new Date(a.startTime) - new Date(b.startTime)

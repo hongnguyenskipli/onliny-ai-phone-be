@@ -1,6 +1,6 @@
 import { Router } from "express";
 import crypto from "crypto";
-import { sendSMS, isValidE164, getUserPhoneNumber, getTwilioClient, sentMessageSids } from "./shared.js";
+import { sendSMS, isValidE164, getUserPhoneNumber, getTwilioClient } from "./shared.js";
 import { chatService } from "../../lib/Services/Chat/chatService.js";
 import { verifyToken } from "../../middleware/verifyToken.js";
 
@@ -8,7 +8,13 @@ const router = Router();
 
 const requestCache = new Map();
 const CACHE_TTL = 60000;
+
+export const sentMessageSids = new Set();
 const SID_CACHE_TTL = 120000;
+
+setInterval(() => {
+  sentMessageSids.clear();
+}, SID_CACHE_TTL);
 
 const generateIdempotencyKey = (uuid, to, body) => {
   return crypto

@@ -261,14 +261,5 @@ export const sendSMS = async (to, body, from, statusCallback = null) => {
 export const isCallMissed = (status) =>
   ["no-answer", "busy", "canceled", "failed"].includes(status);
 
-/* ================= OUTBOUND SMS TRACKING ================= */
-
-export const sentMessageSids = new Set();
-const SID_CACHE_TTL = 120000;
-
-setInterval(() => {
-  sentMessageSids.clear();
-}, SID_CACHE_TTL);
-
 // Auto-start cache cleanup
 startCacheCleanup();
