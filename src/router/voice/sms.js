@@ -8,6 +8,8 @@ const router = Router();
 
 const requestCache = new Map();
 const CACHE_TTL = 60000;
+
+const generateIdempotencyKey = (uuid, to, body) => {
   return crypto
     .createHash('sha256')
     .update(`${uuid}-${to}-${body}-${Date.now()}`)
